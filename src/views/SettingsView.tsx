@@ -21,6 +21,8 @@ import {
   Radio,
   Flame,
   Power,
+  Bot,
+  Sparkles,
 } from 'lucide-react';
 import { AppSettings, CapitalSource, MT5AccountInfo, ScannerConfig, TradeLedgerItem, BrokerSettings, AccountExecutionMode } from '../types';
 
@@ -48,7 +50,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   config,
 }) => {
   const [activeSubTab, setActiveSubTab] = useState<
-    'RISK' | 'CAPITAL' | 'STRATEGY' | 'BROKER' | 'DATA' | 'TELEGRAM'
+    'RISK' | 'CAPITAL' | 'STRATEGY' | 'AI' | 'BROKER' | 'DATA' | 'TELEGRAM'
   >('RISK');
 
   // Form local state
@@ -66,6 +68,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [targetTp2RR, setTargetTp2RR] = useState<string>(settings.targetTp2RR?.toString() || '3.0');
   const [minimumConfidence, setMinimumConfidence] = useState<string>(settings.minimumConfidence?.toString() || '75');
   const [oppositeCooldownMinutes, setOppositeCooldownMinutes] = useState<string>(settings.oppositeCooldownMinutes?.toString() || '10');
+
+  // AI Provider & Model state
+  const [aiProvider, setAiProvider] = useState<string>(settings.aiProvider || '');
+  const [aiModel, setAiModel] = useState<string>(settings.aiModel || '');
 
   // Broker contract inputs
   const [contractSizeOz, setContractSizeOz] = useState<string>(settings.contractSizeOz?.toString() || '100');
@@ -205,6 +211,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setMaximumLot(settings.maximumLot?.toString() || '100');
     setLotStep(settings.lotStep?.toString() || '0.01');
     setMaxGoldSlPoints(settings.maxGoldSlPoints?.toString() || '100');
+    setAiProvider(settings.aiProvider || '');
+    setAiModel(settings.aiModel || '');
   }, [settings, isDirty]);
 
   // Derived calculations
@@ -305,6 +313,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       lotStep: parseFloat(lotStep) || 0.01,
       maxGoldSlPoints: parseFloat(maxGoldSlPoints) || 100,
       oppositeCooldownMinutes: Math.max(0, numCooldown),
+      aiProvider: aiProvider.trim(),
+      aiModel: aiModel.trim(),
     };
 
     const success = await onUpdateSettings(patch);
@@ -422,6 +432,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           { id: 'RISK', label: 'المخاطرة وحجم العقود (Risk & Lot Sizing)' },
           { id: 'CAPITAL', label: 'مصدر رأس المال (Capital Source)' },
           { id: 'STRATEGY', label: 'الاستراتيجية والتداول (Trading Rules)' },
+          { id: 'AI', label: 'الذكاء الاصطناعي والمزود (AI & Model Engine)' },
           { id: 'BROKER', label: 'مواصفات الوسيط (Broker Specs)' },
           { id: 'TELEGRAM', label: 'إشعارات تليجرام (Telegram Alerts)' },
           { id: 'DATA', label: 'البيانات (Data / Export)' },
@@ -1402,6 +1413,202 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             >
               {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
               <span>حفظ وتطبيق قواعد التداول (Save Trading Rules)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* 3.5. AI & MODEL ENGINE CONFIGURATION TAB                  */}
+      {/* ========================================================= */}
+      {activeSubTab === 'AI' && (
+        <div className="bg-stone-900/90 border border-stone-800/90 rounded-2xl p-4 sm:p-6 space-y-5 shadow-xs">
+          <div className="flex items-center justify-between border-b border-stone-800 pb-3">
+            <div className="flex items-center gap-2">
+              <Bot className="w-5 h-5 text-indigo-400" />
+              <h4 className="text-sm font-black text-stone-100 font-mono">
+                إعدادات وتخصيص محرك الذكاء الاصطناعي (AI Provider & Model Engine)
+              </h4>
+            </div>
+            <span className="text-[11px] text-stone-400 font-mono">
+              تحديث فوري لمزود ونموذج التحليل في الخادم والـ Scanner
+            </span>
+          </div>
+
+          {/* Current Mode Badge */}
+          <div className="p-4 rounded-xl border bg-stone-950/80 border-stone-800/90 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-9 h-9 rounded-xl flex items-center justify-center border ${
+                  aiProvider.trim()
+                    ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30'
+                    : 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                }`}
+              >
+                <Sparkles className="w-4.5 h-4.5" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-stone-200 font-mono">
+                  {aiProvider.trim()
+                    ? `وضع المزود الخارجي: ${aiProvider.trim().toUpperCase()} (${aiModel.trim() || 'Default Model'})`
+                    : 'محرك GB-V5 الذاتي القطعي المدمج (GB-V5 Autonomous Brain)'}
+                </div>
+                <div className="text-[11px] text-stone-400 mt-0.5">
+                  {aiProvider.trim()
+                    ? 'يتم إرسال سياق السوق إلى المزود والنموذج المحدد مع تطبيق قواعد GB-V5 الكاملة'
+                    : 'يعمل محرك GB-V5 الداخلي فائق الدقة ذاتياً دون الحاجة إلى مفاتيح أو مزودات خارجية'}
+                </div>
+              </div>
+            </div>
+
+            <span
+              className={`px-2.5 py-1 rounded-full text-[10px] font-mono font-bold border ${
+                aiProvider.trim()
+                  ? 'bg-indigo-950/60 border-indigo-800 text-indigo-300'
+                  : 'bg-amber-950/60 border-amber-800 text-amber-300'
+              }`}
+            >
+              {aiProvider.trim() ? 'EXTERNAL AI CONFIGURED' : 'AUTONOMOUS GB-V5 ACTIVE'}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
+            {/* AI Provider Input / Select */}
+            <div className="bg-stone-950/70 border border-stone-800 rounded-xl p-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-stone-200 block font-mono">
+                  مزود الذكاء الاصطناعي (AI Provider)
+                </label>
+                <span className="text-[10px] text-stone-400">
+                  حدد المزود (مثل GEMINI أو OPENAI أو ANTHROPIC أو اتركه فارغاً للنمط الذاتي)
+                </span>
+              </div>
+
+              <input
+                type="text"
+                value={aiProvider}
+                onChange={(e) => {
+                  setAiProvider(e.target.value);
+                  setIsDirty(true);
+                }}
+                placeholder="اتركه فارغاً للنمط الذاتي أو اكتب GEMINI / OPENAI"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-stone-100 font-mono text-sm focus:outline-hidden focus:border-amber-400"
+              />
+
+              {/* Provider Quick Presets */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] text-stone-400">خيارات سريعة للمزود:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'الذاتي المدمج (None)', val: '', defaultModel: '' },
+                    { label: 'GEMINI', val: 'GEMINI', defaultModel: 'gemini-2.5-flash' },
+                    { label: 'OPENAI', val: 'OPENAI', defaultModel: 'gpt-4o-mini' },
+                    { label: 'ANTHROPIC', val: 'ANTHROPIC', defaultModel: 'claude-3-5-sonnet-latest' },
+                    { label: 'DEEPSEEK', val: 'DEEPSEEK', defaultModel: 'deepseek-chat' },
+                    { label: 'GROQ', val: 'GROQ', defaultModel: 'llama-3.3-70b-versatile' },
+                  ].map((p) => (
+                    <button
+                      key={p.label}
+                      type="button"
+                      onClick={() => {
+                        setAiProvider(p.val);
+                        if (p.defaultModel && (!aiModel || aiProvider !== p.val)) {
+                          setAiModel(p.defaultModel);
+                        } else if (!p.val) {
+                          setAiModel('');
+                        }
+                        setIsDirty(true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold transition-all cursor-pointer ${
+                        aiProvider.toUpperCase() === p.val
+                          ? 'bg-amber-500 text-stone-950 shadow-xs'
+                          : 'bg-stone-900 text-stone-300 hover:bg-stone-800 border border-stone-800'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* AI Model Input */}
+            <div className="bg-stone-950/70 border border-stone-800 rounded-xl p-4 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-stone-200 block font-mono">
+                  نموذج الذكاء الاصطناعي (AI Model)
+                </label>
+                <span className="text-[10px] text-stone-400">
+                  اسم النموذج الدقيق المراد استخدامه في استدعاءات الـ API
+                </span>
+              </div>
+
+              <input
+                type="text"
+                value={aiModel}
+                onChange={(e) => {
+                  setAiModel(e.target.value);
+                  setIsDirty(true);
+                }}
+                placeholder="e.g. gemini-2.5-flash, gpt-4o, claude-3-5-sonnet"
+                className="w-full bg-stone-900 border border-stone-700 rounded-lg px-3 py-2 text-stone-100 font-mono text-sm focus:outline-hidden focus:border-amber-400"
+              />
+
+              {/* Model Quick Presets */}
+              <div className="space-y-1.5 pt-1">
+                <span className="text-[10px] text-stone-400">نماذج شائعة:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    'gemini-2.5-flash',
+                    'gemini-2.5-pro',
+                    'gpt-4o-mini',
+                    'gpt-4o',
+                    'claude-3-5-sonnet-latest',
+                    'deepseek-chat',
+                  ].map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setAiModel(m);
+                        setIsDirty(true);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-mono transition-all cursor-pointer ${
+                        aiModel === m
+                          ? 'bg-amber-500 text-stone-950 font-bold'
+                          : 'bg-stone-900 text-stone-300 hover:bg-stone-800 border border-stone-800'
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Architecture Details Card */}
+            <div className="p-3.5 bg-stone-950/70 border border-stone-800 rounded-xl space-y-1.5 md:col-span-2">
+              <span className="text-stone-400 text-[11px] block font-bold">
+                مسار الربط والتنفيذ (End-to-End Pipeline)
+              </span>
+              <p className="text-[11px] text-stone-400 leading-relaxed font-sans">
+                عند حفظ الإعدادات، يتم تخزين الـ <code className="text-amber-400">aiProvider</code> والـ{' '}
+                <code className="text-amber-400">aiModel</code> في <code className="text-stone-300">AppSettings</code>
+                ، وتمريرها مباشرة عبر <code className="text-stone-300">PUT /api/settings</code> إلى طبقة التخزين
+                المستدامة والـ Scanner. كل طلب تحليل مستقبلي يستلم هذه القيم بدقة دون أي قيم افتراضية مخفية.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end pt-2">
+            <button
+              type="button"
+              disabled={isSaving}
+              onClick={handleSave}
+              className="px-6 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-mono font-black text-xs flex items-center gap-2 transition-all shadow-md disabled:opacity-50 cursor-pointer"
+            >
+              {isSaving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+              <span>حفظ إعدادات الذكاء الاصطناعي (Save AI Configuration)</span>
             </button>
           </div>
         </div>

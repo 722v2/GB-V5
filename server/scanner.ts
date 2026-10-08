@@ -82,6 +82,7 @@ class LiveMarketScanner {
   private workerStartTime: number = Date.now();
   private lastMarketDataTimestamp: number | null = null;
   private biquoteConnectionStatus: string = 'INITIALIZING';
+  private isPaused: boolean = false;
 
   // Active setup tracking for strict duplicate prevention
   private activeSignal: TradeSignal | null = null;
@@ -117,6 +118,45 @@ class LiveMarketScanner {
 
   public setLastScanCompletedTimeForTesting(timeMs: number): void {
     this.lastScanCompletedTime = timeMs;
+  }
+
+  public isScannerPaused(): boolean {
+    return this.isPaused;
+  }
+
+  public pause(): boolean {
+    this.isPaused = true;
+    this.config.isPaused = true;
+    this.config.lastScanStatus = 'المسح الآلي متوقف مؤقتًا (PAUSED)';
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.config.nextScanTime = null;
+    console.log('[SCANNER] paused');
+    return true;
+  }
+
+  public resume(): boolean {
+    this.isPaused = false;
+    this.config.isPaused = false;
+    if (this.config.enabled) {
+      this.start();
+    } else {
+      this.config.lastScanStatus = 'المسح الآلي جاهز للاستئناف';
+    }
+    console.log('[SCANNER] resumed');
+    return true;
+  }
+
+  public getStatus() {
+    const health = this.getHealthReport();
+    return {
+      ...this.config,
+      isPaused: this.isPaused,
+      status: this.isPaused ? 'PAUSED' : (this.config.enabled ? 'ONLINE' : 'OFFLINE'),
+      health,
+    };
   }
 
   public getConfig(): ScannerConfig {
@@ -281,6 +321,17 @@ class LiveMarketScanner {
   ): Promise<TradeSignal | null> {
     const source = options?.source || 'cron';
     const force = options?.force || false;
+
+    if (this.isPaused && !force) {
+      if (source === 'cron') {
+        console.log('[SCANNER] Cron tick: SKIPPED_PAUSED (Scanner is paused)');
+      } else if (source === 'manual') {
+        console.log('[SCANNER] Manual scan: SKIPPED (Scanner is paused)');
+      } else {
+        console.log(`[SCANNER] ${source}: SKIPPED_PAUSED (Scanner is paused)`);
+      }
+      return this.config.lastSignal || null;
+    }
 
     if (this.isScanRunning) {
       const runningDuration = Date.now() - (this.scanStartTime || 0);
@@ -938,7 +989,7 @@ class LiveMarketScanner {
           (activeTradeDirection === 'SELL' && signal.signal.toUpperCase().includes('BUY')));
 
       // Check structural same-setup identity against active in-flight trade
-      const structuralIdentity = checkStructuralSameSetupIdentity(this.activeSignal, signal);
+      const structuralIdentity = checkStructuralSameSetupIdentity(signal, this.activeSignal);
       const isSameSetupActive = structuralIdentity.isDuplicate;
 
       // Status text for storage
@@ -1417,11 +1468,23 @@ class LiveMarketScanner {
   public async triggerCronTick(): Promise<{
     signal: TradeSignal | null;
     health: any;
-    status: 'EXECUTED' | 'SKIPPED_COOLDOWN' | 'SKIPPED_IN_FLIGHT';
+    status: 'EXECUTED' | 'SKIPPED_COOLDOWN' | 'SKIPPED_IN_FLIGHT' | 'SKIPPED_PAUSED';
     skipped: boolean;
     reason?: string;
   }> {
     const now = Date.now();
+
+    if (this.isPaused) {
+      console.log('[SCANNER] Cron tick: SKIPPED_PAUSED (Scanner is paused)');
+      return {
+        signal: this.config.lastSignal || null,
+        health: this.getHealthReport(),
+        status: 'SKIPPED_PAUSED',
+        skipped: true,
+        reason: 'Scanner is currently paused',
+      };
+    }
+
     if (this.isScanRunning) {
       console.log('[SCANNER] Cron tick: SKIPPED_IN_FLIGHT');
       return {
@@ -1449,6 +1512,7 @@ class LiveMarketScanner {
     console.log('[SCANNER] Cron tick: EXECUTING');
     const signal = await this.runScan('XAU/USD', { source: 'cron' });
     const health = this.getHealthReport();
+
     return {
       signal,
       health,
@@ -1474,7 +1538,8 @@ class LiveMarketScanner {
     const secondsToNext = nextScanMs ? Math.max(0, Math.ceil((nextScanMs - now) / 1000)) : null;
 
     return {
-      scannerStatus: this.config.enabled ? 'ONLINE' : 'OFFLINE',
+      scannerStatus: this.isPaused ? 'PAUSED' : (this.config.enabled ? 'ONLINE' : 'OFFLINE'),
+      isPaused: this.isPaused,
       triggerMode: this.getTriggerMode(),
       internalTimerActive: this.isInternalTimerActive(),
       lastScanTime: this.config.lastScanTime,

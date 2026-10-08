@@ -1,1 +1,23 @@
-{}
+{
+  "test_sig_exp_1791396852274": {
+    "signalId": "test_sig_exp_1791396852274",
+    "setupFamily": "ORDER_BLOCK",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "ORDER_BLOCK",
+      "direction": "BUY",
+      "htfStructure": "UPTREND",
+      "m15Structure": "BULLISH",
+      "marketRegime": "NORMAL_RANGE",
+      "liquidity": "NONE",
+      "orderBlock": "BULLISH_OB",
+      "fvg": "BULLISH_FVG",
+      "zone": "DISCOUNT",
+      "rsi": "NEUTRAL",
+      "macd": "NEUTRAL",
+      "volatility": "NORMAL"
+    },
+    "combinationKey": "direction=BUY|fvg=BULLISH_FVG|htfStructure=UPTREND|liquidity=NONE|m15Structure=BULLISH|macd=NEUTRAL|marketRegime=NORMAL_RANGE|orderBlock=BULLISH_OB|rsi=NEUTRAL|setupFamily=ORDER_BLOCK|volatility=NORMAL|zone=DISCOUNT",
+    "createdAt": 1789840000000
+  }
+}

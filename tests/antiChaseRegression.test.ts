@@ -329,7 +329,7 @@ async function runAntiChaseTestSuite() {
       timestamp: Date.now(),
     };
 
-    const duplicateCheck = checkStructuralSameSetupIdentity(activeSignal, evolvingCandidate);
+    const duplicateCheck = checkStructuralSameSetupIdentity(evolvingCandidate, activeSignal);
     assert(
       duplicateCheck.isDuplicate === true,
       'Test E.1: Same active setup is correctly identified as duplicate to prevent spam',

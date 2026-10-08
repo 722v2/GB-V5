@@ -400,7 +400,7 @@ export async function runBatch11Validation() {
     stopLoss: 2645.5,
     timestamp: now + TF_5M_MS,
   };
-  const rolloverIdentity = checkStructuralSameSetupIdentity(canonicalSignal, rolledCandleSignal);
+  const rolloverIdentity = checkStructuralSameSetupIdentity(rolledCandleSignal, canonicalSignal);
   assert.strictEqual(rolloverIdentity.isDuplicate, true, 'Active in-flight trade retains identity across candle boundary');
 
   reportMetrics.passed++;

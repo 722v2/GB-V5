@@ -5,6 +5,9 @@ export type StrategyFamily =
   | 'LIQUIDITY_SWEEP'
   | 'ORDER_BLOCK'
   | 'FVG_IMBALANCE'
+  | 'FVG_REVERSAL'
+  | 'MARKET_STRUCTURE_SHIFT'
+  | 'RANGE_BREAKOUT'
   | 'FIBONACCI_OTE'
   | 'BREAK_AND_RETEST'
   | 'COUNTERTREND_SCALP'
@@ -207,6 +210,8 @@ export interface TechnicalIndicators {
   support: number;
   resistance: number;
   structure: 'BULLISH' | 'BEARISH' | 'RANGING';
+  isTrending?: boolean;
+  trendDirection?: string;
   structureShift?: string;
   structureEvent?: StructureEvent;
   trendStructure?: 'HH_HL' | 'LH_LL' | 'RANGING';
@@ -335,6 +340,8 @@ export interface AppSettings {
   enableTradeManagement?: boolean; // Enable Phase 4 continuous trade lifecycle management
   oppositeCooldownMinutes?: number; // Configurable cooldown minutes for opposite signals after trade close
   enableExperienceMemory?: boolean; // Enable feedback memory / historical experience learning
+  aiProvider?: string; // Configured runtime AI provider (e.g., OPENAI, GEMINI, etc.)
+  aiModel?: string; // Configured runtime AI model
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -434,6 +441,7 @@ export interface TradeSignal {
   timestamp: number;
   asset: AssetType;
   signal: SignalDecision;
+  direction?: SignalDecision;
   currentPrice: number;
   entry: number;
   stopLoss: number;
@@ -647,6 +655,8 @@ export interface AccountStats {
 
 export interface ScannerConfig {
   enabled: boolean;
+  isPaused?: boolean;
+  status?: string;
   intervalSeconds: number; // 60 seconds
   intervalMinutes: number;
   minConfidence: number;

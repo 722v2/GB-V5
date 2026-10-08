@@ -21,6 +21,12 @@ async function runStructuralIdentityTests() {
     }
   }
 
+  await storage.waitUntilReady();
+  globalLifecycleManager.clear();
+
+  const testAnchorKey = `M5_DT_${Date.now()}_SELL`;
+  const pivot1 = Date.now();
+
   // Audited Signal A
   const signalA: TradeSignal = {
     id: 'sig_audit_A',
@@ -49,9 +55,9 @@ async function runStructuralIdentityTests() {
     mainReasons: ['M-Formation peak detected', 'Resistance rejection'],
     invalidation: 'Break above 4312.82',
     patternMetadata: {
-      patternAnchorKey: 'M5_DT_1789410000000_SELL',
-      pivot1Time: 1789410000000,
-      pivot2Time: 1789410120000,
+      patternAnchorKey: testAnchorKey,
+      pivot1Time: pivot1,
+      pivot2Time: pivot1 + 120000,
       neckline: 4307.80,
       extremeLevel: 4314.25,
     },
@@ -85,13 +91,17 @@ async function runStructuralIdentityTests() {
     mainReasons: ['Stronger M-Formation rejection', 'Higher peak retest'],
     invalidation: 'Break above 4314.58',
     patternMetadata: {
-      patternAnchorKey: 'M5_DT_1789410000000_SELL', // Same anchor key!
-      pivot1Time: 1789410000000,
-      pivot2Time: 1789410240000,
+      patternAnchorKey: testAnchorKey, // Same anchor key!
+      pivot1Time: pivot1,
+      pivot2Time: pivot1 + 240000,
       neckline: 4307.80,
       extremeLevel: 4316.19, // Peak shift +$1.94
     },
   };
+
+  // Regression Test (Scanner Idle State): Candidate = valid signal, activeItem = null -> no exception & isDuplicate=false
+  const resIdle = checkStructuralSameSetupIdentity(signalA, null);
+  assert(resIdle.isDuplicate === false && resIdle.status === 'QUALIFIED_SIGNAL', 'IDLE: Valid candidate with null activeItem returns QUALIFIED_SIGNAL without error');
 
   // Test A: Audited Signal A and Signal B -> resolved as SAME structural setup
   const resA_B = checkStructuralSameSetupIdentity(signalA, signalB);
@@ -123,7 +133,7 @@ async function runStructuralIdentityTests() {
   // Test F: Same setup after SL hit -> BLOCKED
   globalLifecycleManager.markSetupFailed(signalA, 'Hit Stop Loss at 4312.82');
   assert(globalLifecycleManager.isSetupTerminal(signalA) === true, 'F1: Signal A marked as terminal FAILED');
-  const resF = checkStructuralSameSetupIdentity(null, signalB);
+  const resF = checkStructuralSameSetupIdentity(signalB, null);
   assert(resF.isDuplicate === true && resF.status === 'DUPLICATE_ACTIVE_REENTRY', 'F2: Re-entry after SL hit is permanently BLOCKED', resF.reason);
 
   // Test G: Same setup after scanner restart -> STILL BLOCKED
@@ -148,7 +158,7 @@ async function runStructuralIdentityTests() {
       extremeLevel: 4336.00,
     },
   };
-  const resI = checkStructuralSameSetupIdentity(null, signalNewDoubleTop);
+  const resI = checkStructuralSameSetupIdentity(signalNewDoubleTop, null);
   assert(resI.isDuplicate === false, 'I: Genuinely new Double Top with new pivot anchors is ALLOWED', resI.reason);
 
   // Test J: Independent S11 setup -> ALLOWED / unaffected
@@ -159,7 +169,7 @@ async function runStructuralIdentityTests() {
     strategyFamily: 'BARE_SR',
     patternMetadata: { patternAnchorKey: 'M5_SR_4325_SELL' },
   };
-  const resJ = checkStructuralSameSetupIdentity(null, signalS11);
+  const resJ = checkStructuralSameSetupIdentity(signalS11, null);
   assert(resJ.isDuplicate === false, 'J: Independent S11 setup is ALLOWED');
 
   // Test K: Independent S12 setup -> ALLOWED / unaffected
@@ -170,7 +180,7 @@ async function runStructuralIdentityTests() {
     strategyFamily: 'STRUCTURE_ENGULFING',
     patternMetadata: { patternAnchorKey: 'M5_ENGULF_4320_SELL' },
   };
-  const resK = checkStructuralSameSetupIdentity(null, signalS12);
+  const resK = checkStructuralSameSetupIdentity(signalS12, null);
   assert(resK.isDuplicate === false, 'K: Independent S12 setup is ALLOWED');
 
   // Test L: Independent S13 setup -> ALLOWED / unaffected
@@ -181,7 +191,7 @@ async function runStructuralIdentityTests() {
     strategyFamily: 'MARKET_STRUCTURE',
     patternMetadata: { patternAnchorKey: 'M5_MSB_4315_SELL' },
   };
-  const resL = checkStructuralSameSetupIdentity(null, signalS13);
+  const resL = checkStructuralSameSetupIdentity(signalS13, null);
   assert(resL.isDuplicate === false, 'L: Independent S13 setup is ALLOWED');
 
   // Test N, O, P, Q: Legacy Signal Cleanup Audit

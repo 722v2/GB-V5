@@ -169,7 +169,7 @@ async function runRegressionScenarioTests() {
   };
 
   // Structural setup identity check (even after intervening SELL)
-  const identityRes = checkStructuralSameSetupIdentity(null, buySignal2);
+  const identityRes = checkStructuralSameSetupIdentity(buySignal2, null);
   assert(identityRes.isDuplicate === true, '3a. Second BUY (08:53:56) recognized as SAME structural formation as 08:47:57 BUY', identityRes.reason);
   assert(identityRes.status === 'DUPLICATE_ACTIVE', '3b. Second BUY status is DUPLICATE_ACTIVE (not a new signal)');
 
@@ -216,7 +216,7 @@ async function runRegressionScenarioTests() {
     poiId: 'poi_h1_demand_4240',
   };
 
-  const independentRes = checkStructuralSameSetupIdentity(null, independentSignal);
+  const independentRes = checkStructuralSameSetupIdentity(independentSignal, null);
   assert(independentRes.isDuplicate === false, '4. Independent different formation (Order Block @ 4240) evaluated independently and ALLOWED');
 
   console.log('\n====================================================');

@@ -194,7 +194,7 @@ async function runAuditReport() {
           poiId: cand.poiId,
         };
 
-        const dupCheck = checkStructuralSameSetupIdentity(activeSignal, sig);
+        const dupCheck = checkStructuralSameSetupIdentity(sig, activeSignal);
         if (!dupCheck.isDuplicate) {
           activeSignal = sig;
           st.dispatchedSignals++;

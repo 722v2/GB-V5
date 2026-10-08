@@ -1352,7 +1352,9 @@ export class PersistentStorage {
   }
 
   public getActiveTrades(): TradeLedgerItem[] {
-    return this.inMemoryTrades.filter((t) => !isSyntheticTestRecord(t) && (t.isActive === true || t.result === 'OPEN'));
+    const realTrades = this.inMemoryTrades.filter((t) => !isSyntheticTestRecord(t) && (t.isActive === true || t.result === 'OPEN'));
+    const testTrades = this.inMemoryTestTrades.filter((t) => t.isActive === true || t.result === 'OPEN');
+    return [...realTrades, ...testTrades];
   }
 
   public getTrade(id: string): TradeLedgerItem | undefined {
@@ -2020,11 +2022,16 @@ export class PersistentStorage {
     notes?: string
   ): TradeLedgerItem[] {
     try {
-      const idx = this.inMemoryTrades.findIndex((t) => t.id === id);
+      let targetList = this.inMemoryTrades;
+      let idx = targetList.findIndex((t) => t.id === id);
+      if (idx === -1) {
+        targetList = this.inMemoryTestTrades;
+        idx = targetList.findIndex((t) => t.id === id);
+      }
       if (idx >= 0) {
-        const trade = this.inMemoryTrades[idx];
+        const trade = targetList[idx];
         if (trade.result !== 'OPEN') {
-          return [...this.inMemoryTrades];
+          return [...targetList];
         }
 
         const isRealizedTrade = result === 'WIN' || result === 'LOSS';
@@ -2037,7 +2044,7 @@ export class PersistentStorage {
           ? Number(((trade.balanceAfterTrade || this.inMemoryCurrentBalance) + finalPl).toFixed(2))
           : this.inMemoryCurrentBalance;
 
-        this.inMemoryTrades[idx] = {
+        targetList[idx] = {
           ...trade,
           result,
           pl: finalPl,
@@ -2064,7 +2071,7 @@ export class PersistentStorage {
           };
 
           const closeNotificationId = `close_${trade.id}`;
-          telegramService.sendOutcomeNotification(outcomeRecord, this.inMemoryTrades[idx], {
+          telegramService.sendOutcomeNotification(outcomeRecord, targetList[idx], {
             notificationId: closeNotificationId,
             eventTimestamp: outcomeRecord.timestamp,
           }).catch((err) => {
@@ -2072,25 +2079,27 @@ export class PersistentStorage {
           });
         }
 
-        this.safeSupabase(
-          (c) => c.from('trade_ledger').upsert(this.formatTradeRow(this.inMemoryTrades[idx])),
-          `closeTrade:${id}`
-        );
-
-        if (isRealizedTrade) {
+        if (targetList === this.inMemoryTrades) {
           this.safeSupabase(
-            (c) =>
-              c.from('account_state').upsert({
-                id: 'main',
-                current_balance: this.inMemoryCurrentBalance,
-                starting_balance: this.inMemoryStartingBalance,
-                updated_at: new Date().toISOString(),
-              }),
-            'closeTrade:account_state'
+            (c) => c.from('trade_ledger').upsert(this.formatTradeRow(this.inMemoryTrades[idx])),
+            `closeTrade:${id}`
           );
-        }
 
-        this.syncJsonBackups();
+          if (isRealizedTrade) {
+            this.safeSupabase(
+              (c) =>
+                c.from('account_state').upsert({
+                  id: 'main',
+                  current_balance: this.inMemoryCurrentBalance,
+                  starting_balance: this.inMemoryStartingBalance,
+                  updated_at: new Date().toISOString(),
+                }),
+              'closeTrade:account_state'
+            );
+          }
+
+          this.syncJsonBackups();
+        }
       }
       return [...this.inMemoryTrades];
     } catch (error) {
@@ -2198,10 +2207,18 @@ export class PersistentStorage {
         this.inMemoryLifecycles.shift();
       }
     }
+    if (record.state === 'FAILED' || record.state === 'COMPLETED' || record.state === 'CANCELLED' || record.state === 'EXPIRED') {
+      this.saveTerminalSetup(record.id);
+      this.saveTerminalSetup(`cand_${record.id}`);
+    }
     this.safeSupabase(
       (c) => c.from('candidate_lifecycles').upsert({ id: record.id, raw_data: record }),
       `saveLifecycle:${record.id}`
     );
+  }
+
+  public saveCandidateLifecycle(record: CandidateLifecycleRecord): void {
+    this.saveLifecycle(record);
   }
 
   public saveLifecycles(records: CandidateLifecycleRecord[]): void {
@@ -2220,6 +2237,14 @@ export class PersistentStorage {
   public saveOpportunity(opp: TradeOpportunity): void {
     if (!opp.id) return;
     this.inMemoryOpportunities.set(opp.id, opp);
+    if (opp.status === 'FAILED' || opp.status === 'COMPLETED' || opp.status === 'CANCELLED' || opp.status === 'NOT_ENTERED') {
+      this.saveTerminalSetup(opp.id);
+      this.saveTerminalSetup(`cand_${opp.id}`);
+      if (opp.patternAnchorKey) {
+        this.saveTerminalSetup(opp.patternAnchorKey);
+        this.saveTerminalSetup(`cand_${opp.patternAnchorKey}`);
+      }
+    }
     this.safeSupabase(
       (c) =>
         c.from('opportunities').upsert({

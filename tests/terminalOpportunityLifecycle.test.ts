@@ -512,7 +512,7 @@ async function runTerminalLifecycleTests() {
     pivot1Time: 1700000000000,
   };
 
-  const reEntryCheck = checkStructuralSameSetupIdentity(null, reEntryCandidate);
+  const reEntryCheck = checkStructuralSameSetupIdentity(reEntryCandidate, null);
   assert(reEntryCheck.status === 'DUPLICATE_ACTIVE_REENTRY', '10a: Same structural anchor after FAILED status is strictly blocked (DUPLICATE_ACTIVE_REENTRY)');
   assert(reEntryCheck.isReentry === true, '10b: isReentry is true');
 
@@ -524,7 +524,7 @@ async function runTerminalLifecycleTests() {
     neckline: 4415.0,
     pivot1Time: 1700000500000,
   };
-  const independentCheck = checkStructuralSameSetupIdentity(null, independentCandidate);
+  const independentCheck = checkStructuralSameSetupIdentity(independentCandidate, null);
   assert(independentCheck.status === 'QUALIFIED_SIGNAL', '10c: Independent setup with different structural anchor is ALLOWED (QUALIFIED_SIGNAL)');
 
   console.log('\n====================================================');

@@ -83,7 +83,7 @@ console.log('===================================================================
     setup: 'Bearish Trend Continuation (EMA/VWAP Pullback)',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, candidate);
+  const res = checkStructuralSameSetupIdentity(candidate, activeTrade);
   assert(
     res.isDuplicate === true && res.status === 'DUPLICATE_ACTIVE_REENTRY' && res.details?.sameTargetObjective === true,
     'TEST 1: Same strategy + same POI + same structural origin + same TP objectives -> BLOCK DUPLICATE_ACTIVE_REENTRY',
@@ -115,7 +115,7 @@ console.log('===================================================================
     poiId: 'POI_5M_BEARISH_4286',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, candidate);
+  const res = checkStructuralSameSetupIdentity(candidate, activeTrade);
   assert(
     res.isDuplicate === false && res.status === 'QUALIFIED_SIGNAL',
     'TEST 2: Same strategy + different structural origin & target -> evaluate as independent',
@@ -147,7 +147,7 @@ console.log('===================================================================
     setup: 'Liquidity Sweep Reversal',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, candidate);
+  const res = checkStructuralSameSetupIdentity(candidate, activeTrade);
   assert(
     res.isDuplicate === false && res.status === 'QUALIFIED_SIGNAL',
     'TEST 3: Different strategy family + independent POI + independent target -> allow normal evaluation',
@@ -182,7 +182,7 @@ console.log('===================================================================
     setup: 'Bearish Trend Continuation (EMA/VWAP Pullback)',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, candidateRetrace);
+  const res = checkStructuralSameSetupIdentity(candidateRetrace, activeTrade);
   assert(
     res.isDuplicate === true && res.status === 'DUPLICATE_ACTIVE_REENTRY',
     'TEST 4: Same setup after price moves away and retraces -> BLOCK while original trade is OPEN',
@@ -204,7 +204,7 @@ console.log('===================================================================
   });
 
   // When original trade is CLOSED, activeSignal is null
-  const res = checkStructuralSameSetupIdentity(null, candidate);
+  const res = checkStructuralSameSetupIdentity(candidate, null);
   assert(
     res.isDuplicate === false && res.status === 'QUALIFIED_SIGNAL',
     'TEST 5: Original trade CLOSED (activeSignal is null) -> allowed to undergo normal evaluation',
@@ -226,7 +226,7 @@ console.log('===================================================================
     entry: 4285.00,
   });
 
-  const res = checkStructuralSameSetupIdentity(activeSell, opposingBuy);
+  const res = checkStructuralSameSetupIdentity(opposingBuy, activeSell);
   const isOpposingActiveTrade =
     (activeSell.signal.includes('SELL') && opposingBuy.signal.includes('BUY')) ||
     (activeSell.signal.includes('BUY') && opposingBuy.signal.includes('SELL'));
@@ -262,7 +262,7 @@ console.log('===================================================================
     setup: 'Bearish Trend Continuation (EMA/VWAP Pullback)',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, candidate);
+  const res = checkStructuralSameSetupIdentity(candidate, activeTrade);
   assert(
     res.isDuplicate === true &&
       res.status === 'DUPLICATE_ACTIVE_REENTRY' &&
@@ -299,7 +299,7 @@ console.log('===================================================================
     setup: 'Bullish Range Breakout Expansion',
   });
 
-  const res = checkStructuralSameSetupIdentity(activeTrade, independentBuy);
+  const res = checkStructuralSameSetupIdentity(independentBuy, activeTrade);
   assert(
     res.isDuplicate === false && res.status === 'QUALIFIED_SIGNAL',
     'TEST 8: Genuinely independent same-direction setup -> MUST NOT be blocked solely because direction is the same',

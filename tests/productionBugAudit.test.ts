@@ -130,7 +130,7 @@ async function runAuditTests() {
   // --------------------------------------------------------------------------
   const baseS10Storage = { ...baseS10, timestamp: Date.now() + 50000 };
   storage.saveSignal(baseS10Storage);
-  const res6 = checkStructuralSameSetupIdentity(null, candDiffConf);
+  const res6 = checkStructuralSameSetupIdentity(candDiffConf, null);
   assert(res6.isDuplicate === true, '6. Same formation across scanner restart -> recognized from storage');
 
   // --------------------------------------------------------------------------
@@ -143,7 +143,7 @@ async function runAuditTests() {
   // TEST 8: Same setup after SL hit -> permanently blocked (hard terminal block)
   // --------------------------------------------------------------------------
   globalLifecycleManager.markSetupFailed(baseS10, 'Stopped out on SL');
-  const res8 = checkStructuralSameSetupIdentity(null, baseS10);
+  const res8 = checkStructuralSameSetupIdentity(baseS10, null);
   assert(res8.isDuplicate === true && res8.status === 'DUPLICATE_ACTIVE_REENTRY', '8. Same setup after SL hit -> permanently blocked');
 
   // --------------------------------------------------------------------------
@@ -332,7 +332,7 @@ async function runAuditTests() {
     confidence: 77,
     patternMetadata: { patternAnchorKey: replaySetupKey, pivot1Time: 1789408486000, extremeLevel: 4214.00, neckline: 4207.80 },
   };
-  const check1 = checkStructuralSameSetupIdentity(null, msg1);
+  const check1 = checkStructuralSameSetupIdentity(msg1, null);
   if (!check1.isDuplicate) {
     totalReplayTelegramDispatches++;
     testStorage.saveTelegramDispatch(msg1.setupId);

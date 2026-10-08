@@ -2,6 +2,7 @@ import { Candle, SignalDecision, TradeSignal, HistoricalDataValidationReport } f
 import { analyzeTechnicals } from './indicators.js';
 import { calculateDynamicTakeProfits, DynamicTpResult } from './tpEngine.js';
 import { evaluateTradeRisk } from './riskManager.js';
+import { discoverGbv5Candidates } from './gbv5Brain.js';
 import {
   fetchHistoricalCandlesWithPagination,
   validateHistoricalBacktestDataset,

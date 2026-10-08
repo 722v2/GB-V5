@@ -32,8 +32,10 @@
   "maxLoss": 5.5,
   "partialClosePercent": 50,
   "enableTradeManagement": true,
-  "oppositeCooldownMinutes": 10,
+  "oppositeCooldownMinutes": 5,
   "enableExperienceMemory": true,
   "notifyNoTrade": false,
-  "updatedAt": 1789586800000
+  "updatedAt": 1789586800000,
+  "aiProvider": "NVIDIA",
+  "aiModel": "meta/llama-3.2-11b-vision-instru"
 }

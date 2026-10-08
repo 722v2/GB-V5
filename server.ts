@@ -689,7 +689,27 @@ async function startServer() {
 
   // Scanner status and config
   app.get('/api/scanner/status', (req, res) => {
-    res.json(scanner.getConfig());
+    res.json(scanner.getStatus());
+  });
+
+  // Scanner pause control
+  app.post('/api/scanner/pause', (req, res) => {
+    try {
+      scanner.pause();
+      res.json({ success: true, isPaused: true, status: scanner.getStatus() });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Scanner resume control
+  app.post('/api/scanner/resume', (req, res) => {
+    try {
+      scanner.resume();
+      res.json({ success: true, isPaused: false, status: scanner.getStatus() });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
   });
 
   // Scanner manual trigger
