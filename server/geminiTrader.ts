@@ -4,7 +4,6 @@ import { BrokerContractSpecs, evaluateTradeRisk } from './riskManager.js';
 import { calculateDynamicTakeProfits } from './tpEngine.js';
 import { generateMultiStrategyCandidates, SetupCandidate } from './strategyEngine.js';
 import { experienceMemoryEngine } from './experienceMemory.js';
-import { validateTradeSignalCandidate, inferStrategyFamily } from './tradeQualityEngine.js';
 import { partition1hCandles, partition15mCandles, partition5mCandles, partition1mCandles } from './candleUtils.js';
 
 export const XAUUSD_TRADE_SIGNAL_JSON_SCHEMA = {
@@ -202,8 +201,10 @@ export interface MarketAnalysisInput {
   indicators1h: TechnicalIndicators;
   indicators15m: TechnicalIndicators;
   indicators5m: TechnicalIndicators;
-  recent5mCandles: Candle[];
-  recent1mCandles: Candle[];
+  recent5mCandles?: Candle[];
+  recent1mCandles?: Candle[];
+  candles5m?: Candle[];
+  candles1m?: Candle[];
   candles1h?: Candle[];
   candles15m?: Candle[];
   losingStreak: number;
@@ -238,15 +239,15 @@ export function algorithmicScreening(input: MarketAnalysisInput): {
     indicators5m: input.indicators5m,
     candles1h: input.candles1h || [],
     candles15m: input.candles15m || [],
-    candles5m: input.recent5mCandles || [],
-    candles1m: input.recent1mCandles || [],
+    candles5m: input.recent5mCandles || input.candles5m || [],
+    candles1m: input.recent1mCandles || input.candles1m || [],
     losingStreak: input.losingStreak,
     brokerSpecs: input.brokerSpecs,
     activeTradeDirection: input.activeTradeDirection,
     currentSpread: input.currentSpread,
   });
 
-  if (candidateResult.hasValidSignal && candidateResult.selectedCandidate) {
+  if (candidateResult.hasOpportunity && candidateResult.selectedCandidate) {
     const cand = candidateResult.selectedCandidate;
     const decision: SignalDecision = cand.direction === 'BUY'
       ? (cand.orderType === 'LIMIT' ? 'BUY LIMIT' : 'BUY NOW')
@@ -295,28 +296,39 @@ export async function runAIAnalysis(input: MarketAnalysisInput): Promise<TradeSi
 
   // If algorithmic brain identified a setup, format into high-confidence TradeSignal
   if (algoResult.decision !== 'NO TRADE') {
+    const riskDirection: 'BUY' | 'SELL' =
+      algoResult.decision.toUpperCase().includes('BUY') ? 'BUY' : 'SELL';
+
     const riskEval = evaluateTradeRisk({
-      accountBalance: input.balance,
-      entryPrice: algoResult.entry,
-      stopLossPrice: algoResult.stopLoss,
+      balance: input.balance,
+      entry: algoResult.entry,
+      stopLoss: algoResult.stopLoss,
+      tp1: algoResult.tp1,
+      tp2: algoResult.tp2,
+      direction: riskDirection,
+      confidence: algoResult.confidence,
       brokerSpecs,
       riskPercent: 1.5,
+      asset: (input.asset as 'XAU/USD' | 'BTC/USD') || 'XAU/USD',
     });
 
     const slDist = Math.abs(algoResult.entry - algoResult.stopLoss);
     const tp1Dist = Math.abs(algoResult.tp1 - algoResult.entry);
     const tp2Dist = Math.abs(algoResult.tp2 - algoResult.entry);
-    const slPts = Math.round((slDist / 0.1) * 10) / 10;
-    const tp1Pts = Math.round((tp1Dist / 0.1) * 10) / 10;
-    const tp2Pts = Math.round((tp2Dist / 0.1) * 10) / 10;
-    const tp1Rr = slDist > 0 ? Math.round((tp1Dist / slDist) * 100) / 100 : 1.5;
-    const tp2Rr = slDist > 0 ? Math.round((tp2Dist / slDist) * 100) / 100 : 3.0;
+    const slPts = riskEval.slPoints || Math.round((slDist / 0.1) * 10) / 10;
+    const tp1Pts = riskEval.tp1Points || Math.round((tp1Dist / 0.1) * 10) / 10;
+    const tp2Pts = riskEval.tp2Points || Math.round((tp2Dist / 0.1) * 10) / 10;
+    const tp1Rr = riskEval.tp1Rr || (slDist > 0 ? Math.round((tp1Dist / slDist) * 100) / 100 : 1.5);
+    const tp2Rr = riskEval.tp2Rr || (slDist > 0 ? Math.round((tp2Dist / slDist) * 100) / 100 : 3.0);
+
+    const posSizing = riskEval.positionSizing;
 
     const signal: TradeSignal = {
       id: `sig_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       timestamp: Date.now(),
       asset: input.asset,
-      signal: algoResult.decision,
+      signal: riskEval.valid ? algoResult.decision : 'NO TRADE',
+      direction: algoResult.decision,
       currentPrice: input.currentPrice,
       entry: algoResult.entry,
       stopLoss: algoResult.stopLoss,
@@ -324,48 +336,52 @@ export async function runAIAnalysis(input: MarketAnalysisInput): Promise<TradeSi
       tp1: algoResult.tp1,
       tp1Points: tp1Pts,
       tp1Rr,
-      tp1RrString: `1:${tp1Rr.toFixed(2)}`,
+      tp1RrString: riskEval.tp1RrString || `1:${tp1Rr.toFixed(2)}`,
       tp2: algoResult.tp2,
       tp2Points: tp2Pts,
       tp2Rr,
-      tp2RrString: `1:${tp2Rr.toFixed(2)}`,
+      tp2RrString: riskEval.tp2RrString || `1:${tp2Rr.toFixed(2)}`,
       primaryTarget: 'TP1',
-      rr: `TP1: 1:${tp1Rr.toFixed(2)} | TP2: 1:${tp2Rr.toFixed(2)}`,
+      rr: riskEval.rrString || `TP1: 1:${tp1Rr.toFixed(2)} | TP2: 1:${tp2Rr.toFixed(2)}`,
       rrRatio: tp1Rr,
       riskPercent: riskEval.riskPercent,
-      riskAmount: riskEval.riskDollars,
-      potentialProfit: Math.round(riskEval.riskDollars * tp1Rr * 100) / 100,
-      potentialLoss: riskEval.riskDollars,
+      riskAmount: riskEval.riskAmount,
+      potentialProfit: riskEval.potentialProfit,
+      potentialLoss: riskEval.potentialLoss,
       recommendedLotSize: riskEval.recommendedLotSize,
       confidence: algoResult.confidence,
-      strategyConfidence: algoResult.confidence,
-      executionQualityScore: algoResult.confidence,
-      strategyFamily: inferStrategyFamily(algoResult.setup),
+      strategyConfidence: algoResult.candidate?.strategyConfidence ?? algoResult.confidence,
+      executionQualityScore: algoResult.candidate?.executionQualityScore ?? algoResult.confidence,
+      confluenceScore: algoResult.candidate?.score,
+      strategyFamily: algoResult.candidate?.strategyFamily || algoResult.candidate?.family || 'MARKET_STRUCTURE',
       timeframe: algoResult.timeframe,
       setup: algoResult.setup,
       mainReasons: algoResult.mainReasons,
       invalidation: algoResult.invalidation,
-      isExecutable: riskEval.isExecutable,
-      nonExecutableReason: riskEval.nonExecutableReason,
-      positionSizing: {
-        accountBalance: input.balance,
-        riskPercent: riskEval.riskPercent,
-        riskDollars: riskEval.riskDollars,
-        entryPrice: algoResult.entry,
-        stopLossPrice: algoResult.stopLoss,
-        priceDistance: slDist,
-        contractSizeOz: brokerSpecs.contractSizeOz ?? 100,
-        riskPerStandardLot: riskEval.riskPerStandardLot,
-        standardLotSize: riskEval.recommendedLotSize,
-        miniLotSize: Math.round(riskEval.recommendedLotSize * 10 * 100) / 100,
-        microLotSize: Math.round(riskEval.recommendedLotSize * 100 * 100) / 100,
-        estimatedMaxLoss: riskEval.estimatedMaxLoss,
-        isExecutable: riskEval.isExecutable,
-        nonExecutableReason: riskEval.nonExecutableReason,
-        minimumLot: brokerSpecs.minimumLot ?? 0.01,
-        maximumLot: brokerSpecs.maximumLot ?? 100,
-        lotStep: brokerSpecs.lotStep ?? 0.01,
-      },
+      noTradeReason: riskEval.valid ? undefined : riskEval.reason,
+      supportingConfluences: algoResult.candidate?.supportingConfluences,
+      patternMetadata: algoResult.candidate?.patternMetadata,
+      isExecutable: posSizing?.isExecutable ?? false,
+      nonExecutableReason: posSizing?.nonExecutableReason,
+      positionSizing: posSizing ? {
+        accountBalance: posSizing.accountBalance,
+        riskPercent: posSizing.riskPercent,
+        riskDollars: posSizing.riskDollars,
+        entryPrice: posSizing.entryPrice,
+        stopLossPrice: posSizing.stopLossPrice,
+        priceDistance: posSizing.priceDistance,
+        contractSizeOz: posSizing.contractSizeOz,
+        riskPerStandardLot: posSizing.riskPerStandardLot,
+        standardLotSize: posSizing.standardLotSize,
+        miniLotSize: posSizing.miniLotSize,
+        microLotSize: posSizing.microLotSize,
+        estimatedMaxLoss: posSizing.estimatedMaxLoss,
+        isExecutable: posSizing.isExecutable,
+        nonExecutableReason: posSizing.nonExecutableReason,
+        minimumLot: posSizing.minimumLot,
+        maximumLot: posSizing.maximumLot,
+        lotStep: posSizing.lotStep,
+      } : undefined,
     };
 
     return signal;
@@ -409,5 +425,31 @@ export async function runAIAnalysis(input: MarketAnalysisInput): Promise<TradeSi
     ],
     invalidation: 'تغير حركة السعر وظهور نموذج فني متكامل',
     noTradeReason: 'لا توجد فرصة مطابقة لشروط التداول الآمن',
+  };
+}
+
+export function resolveAiSignalWithDeterministicFallback(
+  aiParsed: any,
+  multiResult: { allCandidates: SetupCandidate[] },
+  input: MarketAnalysisInput
+): { signal: SignalDecision; noTradeReason?: string; confidence: number } {
+  if (aiParsed && typeof aiParsed.confidence === 'number' && aiParsed.confidence < 70) {
+    return {
+      signal: 'NO TRADE',
+      confidence: 0,
+      noTradeReason: 'الحد الأدنى للثقة غير محقق (أقل من 70%)',
+    };
+  }
+  const best = multiResult?.allCandidates?.length > 0 ? multiResult.allCandidates[0] : null;
+  if (best) {
+    return {
+      signal: best.direction === 'BUY' ? 'BUY NOW' : 'SELL NOW',
+      confidence: best.confidence,
+    };
+  }
+  return {
+    signal: 'NO TRADE',
+    confidence: 0,
+    noTradeReason: 'لا توجد فرصة مطابقة',
   };
 }

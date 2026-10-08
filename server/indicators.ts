@@ -1,5 +1,11 @@
 import { Candle, TechnicalIndicators } from '../src/types.js';
 
+declare module '../src/types.js' {
+  interface TechnicalIndicators {
+    isDataSufficient?: boolean;
+  }
+}
+
 // Calculate Exponential Moving Average (EMA) with standard SMA seeding
 export function calculateEMA(prices: number[], period: number): number[] {
   if (!prices || prices.length < period || period <= 0) return [];
@@ -211,6 +217,7 @@ export function calculateEqualTolerance(atr: number): number {
 export function analyzeTechnicals(candles: Candle[], referenceTime?: number): TechnicalIndicators {
   if (!candles || !Array.isArray(candles) || candles.length === 0) {
     return {
+      isDataSufficient: false,
       ema20: 0,
       ema50: 0,
       ema200: 0,
@@ -250,6 +257,29 @@ export function analyzeTechnicals(candles: Candle[], referenceTime?: number): Te
   }
 
   const effectiveCandles = isLastForming ? candles.slice(0, -1) : candles;
+  if (effectiveCandles.length === 0) {
+    return {
+      isDataSufficient: false,
+      ema20: 0,
+      ema50: 0,
+      ema200: 0,
+      vwap: 0,
+      rsi14: 50,
+      macd: { macd: 0, signal: 0, histogram: 0 },
+      atr14: 0,
+      bollingerBands: { upper: 0, middle: 0, lower: 0 },
+      swingHigh: 0,
+      swingLow: 0,
+      rollingHigh: 0,
+      rollingLow: 0,
+      structuralSwingHigh: 0,
+      structuralSwingLow: 0,
+      support: 0,
+      resistance: 0,
+      structure: 'RANGING',
+      marketRegime: 'UNCLEAR',
+    };
+  }
 
   const closes = effectiveCandles.map((c) => c.close);
   const latestClose = closes[closes.length - 1] || 0;
@@ -758,6 +788,7 @@ export function analyzeTechnicals(candles: Candle[], referenceTime?: number): Te
   };
 
   return {
+    isDataSufficient: effectiveCandles.length >= 10,
     ema20,
     ema50,
     ema200,

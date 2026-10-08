@@ -120,15 +120,15 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
       isEngulfing: false,
       engulfingDirection: 'NONE',
       isStrongCandle: false,
-      bodyToRangeRatio: 0.5,
-      bodySizeRelativeAtr: 0.5,
-      closeLocationPercent: 50,
+      bodyToRangeRatio: 0,
+      bodySizeRelativeAtr: 0,
+      closeLocationPercent: 0,
       hasDisplacement: false,
       displacementAtr: 0,
       consecutiveMomentumCandles: 0,
       relationshipToPrevious: 'NEUTRAL',
-      rejectionQualityScore: 10,
-      description: 'Default price action context',
+      rejectionQualityScore: 0,
+      description: 'Data unavailable: No candles provided',
     };
   }
 
@@ -199,6 +199,24 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
 }
 
 export function extractMacdEvidence(ind: TechnicalIndicators): MacdEvidence {
+  if (!ind || ind.isDataSufficient === false || !ind.macd) {
+    return {
+      macdLine: 0,
+      signalLine: 0,
+      histogram: 0,
+      prevHistogram: 0,
+      macdVsSignal: 'BELOW',
+      histogramDirection: 'CONTRACTING_NEGATIVE',
+      histogramAcceleration: 'STEADY',
+      zeroLinePosition: 'AT_ZERO',
+      zeroLineTransition: 'NONE',
+      recentCrossoverBarsAgo: 0,
+      momentumState: 'NEUTRAL',
+      evidenceScore: 0,
+      description: 'MACD: Data unavailable or insufficient',
+    };
+  }
+
   const macdObj = ind.macd || { macd: 0, signal: 0, histogram: 0 };
   const macdLine = Number((macdObj.macd ?? 0).toFixed(3));
   const signalLine = Number((macdObj.signal ?? 0).toFixed(3));
@@ -244,6 +262,18 @@ export function extractMacdEvidence(ind: TechnicalIndicators): MacdEvidence {
 }
 
 export function extractRsiEvidence(ind: TechnicalIndicators): RsiEvidence {
+  if (!ind || ind.isDataSufficient === false || typeof ind.rsi14 !== 'number') {
+    return {
+      rsiValue: 50,
+      momentumState: 'NEUTRAL',
+      isExhausted: false,
+      isOverextended: false,
+      divergence: 'NONE',
+      evidenceScore: 0,
+      description: 'RSI(14): Data unavailable or insufficient',
+    };
+  }
+
   const rsi = Number((ind.rsi14 ?? 50).toFixed(1));
   let state: RsiEvidence['momentumState'] = 'NEUTRAL';
   let isExhausted = false;
@@ -284,6 +314,27 @@ export function extractStructureEvidence(
   ind5m: TechnicalIndicators,
   atr: number
 ): StructureEvidence {
+  if (
+    (!ind15m || ind15m.isDataSufficient === false) &&
+    (!ind5m || ind5m.isDataSufficient === false)
+  ) {
+    return {
+      swingHigh: currentPrice,
+      swingLow: currentPrice,
+      structureTrend: 'RANGING',
+      hasBos: false,
+      bosDirection: 'NONE',
+      hasChoch: false,
+      chochDirection: 'NONE',
+      isRetestingBreak: false,
+      retestLevel: null,
+      hasDisplacement: false,
+      structuralInvalidationPrice: currentPrice,
+      evidenceScore: 0,
+      description: 'Structure: Data unavailable or insufficient',
+    };
+  }
+
   const swingH = ind15m.swingHigh || ind5m.swingHigh || currentPrice + atr * 2;
   const swingL = ind15m.swingLow || ind5m.swingLow || currentPrice - atr * 2;
   const trend = ind15m.structure || 'RANGING';
@@ -317,6 +368,22 @@ export function extractLiquidityEvidence(
   candles5m: Candle[],
   ind15m: TechnicalIndicators
 ): LiquidityEvidence {
+  if (!candles5m || candles5m.length === 0) {
+    return {
+      equalHighs: [],
+      equalLows: [],
+      sweptLevel: null,
+      sweepDirection: 'NONE',
+      isSfp: false,
+      hasReclaimedLevel: false,
+      reclaimedPrice: null,
+      internalTarget: currentPrice,
+      externalTarget: currentPrice,
+      evidenceScore: 0,
+      description: 'Liquidity: No 5M candle data available',
+    };
+  }
+
   const recent = candles5m.slice(-30);
   const highs = recent.map((c) => c.high);
   const lows = recent.map((c) => c.low);
@@ -379,12 +446,12 @@ export function buildCompleteEvidenceBundle(params: {
   indicators1h: TechnicalIndicators;
   currentSpread?: number;
 }): Gbv5EvidenceBundle {
-  const { currentPrice, candles1m, candles5m, indicators5m, indicators15m, indicators1h, currentSpread = 0.15 } = params;
-  const atr5m = indicators5m.atr14 || 1.5;
+  const { currentPrice, candles1m = [], candles5m = [], indicators5m, indicators15m, indicators1h, currentSpread = 0.15 } = params;
+  const atr5m = indicators5m?.atr14 || 1.5;
   const atr1m = atr5m * 0.45;
 
   return {
-    priceActionM1: extractPriceActionEvidence(candles1m.length > 0 ? candles1m : candles5m, atr1m),
+    priceActionM1: extractPriceActionEvidence(candles1m, atr1m),
     priceActionM5: extractPriceActionEvidence(candles5m, atr5m),
     macd: extractMacdEvidence(indicators5m),
     rsi: extractRsiEvidence(indicators5m),
@@ -392,13 +459,13 @@ export function buildCompleteEvidenceBundle(params: {
     liquidity: extractLiquidityEvidence(currentPrice, candles5m, indicators15m),
     sessionRegime: extractSessionRegimeEvidence(currentSpread),
     htfContext15m: {
-      structure: indicators15m.structure || 'RANGING',
-      vwapBias: currentPrice > (indicators15m.vwap || currentPrice) ? 'ABOVE_VWAP' : 'BELOW_VWAP',
-      emaBias: (indicators15m.ema20 || 0) > (indicators15m.ema50 || 0) ? 'BULLISH' : 'BEARISH',
+      structure: indicators15m?.structure || 'RANGING',
+      vwapBias: currentPrice > (indicators15m?.vwap || currentPrice) ? 'ABOVE_VWAP' : 'BELOW_VWAP',
+      emaBias: (indicators15m?.ema20 || 0) > (indicators15m?.ema50 || 0) ? 'BULLISH' : 'BEARISH',
     },
     htfContext1h: {
-      structure: indicators1h.structure || 'RANGING',
-      trend: (indicators1h.marketRegime as any) || 'RANGING',
+      structure: indicators1h?.structure || 'RANGING',
+      trend: (indicators1h?.marketRegime as any) || 'RANGING',
     },
   };
 }

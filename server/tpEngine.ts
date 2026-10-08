@@ -752,8 +752,8 @@ export function calculateDynamicTakeProfits(req: DynamicTpRequest): DynamicTpRes
 
   // 5. TP1 Selection: Directional search for the nearest target satisfying >= 0.70R (or minRr)
   // Sub-1.0R levels are preserved as intermediate obstacles/management levels or natural structural targets.
-  // minRr is evaluated at signal gate; TP1 strictly identifies the nearest valid structural target >= 0.70R.
-  const minRequiredRr = typeof req.minRr === 'number' && req.minRr < 1.0 ? req.minRr : 0.70;
+  // minRr is evaluated at signal gate; TP1 strictly identifies the nearest valid structural target >= minRequiredRr.
+  const minRequiredRr = typeof req.minRr === 'number' ? req.minRr : 1.0;
   const minTargetDistance = Number((slDistance * minRequiredRr).toFixed(2));
 
   const sub1rStructuralObstacles = structuralCandidates.filter((c) => c.distance < minTargetDistance - 0.001);

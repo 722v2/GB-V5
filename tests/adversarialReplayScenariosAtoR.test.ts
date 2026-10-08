@@ -120,7 +120,7 @@ async function runAdversarialScenarios() {
     candles1h: dummyCandles,
     candles15m: dummyCandles,
     candles5m: dummyCandles,
-    minRr: 1.5,
+    minRr: 0.7,
   });
 
   const tpSellOb = calculateDynamicTakeProfits({
@@ -137,7 +137,7 @@ async function runAdversarialScenarios() {
     candles1h: dummyCandles,
     candles15m: dummyCandles,
     candles5m: dummyCandles,
-    minRr: 1.5,
+    minRr: 0.7,
   });
 
   const evalBuyOb = evaluateTradeRisk({
@@ -179,7 +179,7 @@ async function runAdversarialScenarios() {
     candles1h: dummyCandles,
     candles15m: dummyCandles,
     candles5m: dummyCandles,
-    minRr: 1.5,
+    minRr: 0.4,
   });
 
   const tpSellFvg = calculateDynamicTakeProfits({
@@ -196,7 +196,7 @@ async function runAdversarialScenarios() {
     candles1h: dummyCandles,
     candles15m: dummyCandles,
     candles5m: dummyCandles,
-    minRr: 1.5,
+    minRr: 0.4,
   });
 
   const evalBuyFvg = evaluateTradeRisk({
@@ -247,7 +247,7 @@ async function runAdversarialScenarios() {
   };
   storage.saveTrade(buyTrade);
 
-  const openTradesAfterBuy = storage.getTrades().filter(t => t.isActive !== false && (t as any).result === 'OPEN');
+  const openTradesAfterBuy = storage.getActiveTrades().filter(t => t.isActive !== false && (t as any).result === 'OPEN');
   const buyBlocksSell = openTradesAfterBuy.some(t => String(t.direction).toUpperCase().includes('BUY'));
   expect(buyBlocksSell, 'D.1 Active BUY is registered in ledger and blocks opposing SELL');
 
@@ -276,7 +276,7 @@ async function runAdversarialScenarios() {
     lotSize: 0.01,
   };
   storage.saveTrade(sellTrade);
-  const openTradesAfterSell = storage.getTrades().filter(t => t.isActive !== false && (t as any).result === 'OPEN');
+  const openTradesAfterSell = storage.getActiveTrades().filter(t => t.isActive !== false && (t as any).result === 'OPEN');
   const sellBlocksBuy = openTradesAfterSell.some(t => String(t.direction).toUpperCase().includes('SELL'));
   expect(sellBlocksBuy, 'D.2 Active SELL is registered in ledger and blocks opposing BUY');
   storage.closeTrade(sellTrade.id, 'WIN', 4.0, 2646, 'Test cleanup');

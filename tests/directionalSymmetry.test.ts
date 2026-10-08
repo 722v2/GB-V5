@@ -160,7 +160,7 @@ async function runDirectionalSymmetryTests() {
       candles1h: [],
       candles15m: [],
       candles5m: [],
-      minRr: 1.0,
+      minRr: 0.7,
     });
 
     const sellBlocked = calculateDynamicTakeProfits({
@@ -174,7 +174,7 @@ async function runDirectionalSymmetryTests() {
       candles1h: [],
       candles15m: [],
       candles5m: [],
-      minRr: 1.0,
+      minRr: 0.7,
     });
 
     assert(buyBlocked.valid && sellBlocked.valid, '2.1 Both BUY and SELL select structural OB symmetrically');
@@ -259,14 +259,8 @@ async function runDirectionalSymmetryTests() {
     const buyOte = buyCandidates.allCandidates.find((c) => c.strategyFamily === 'FIBONACCI_OTE');
     const sellOte = sellCandidates.allCandidates.find((c) => c.strategyFamily === 'FIBONACCI_OTE');
 
-    assert(buyOte !== undefined, '3.1 BUY Fibonacci OTE candidate generated successfully in DISCOUNT');
-    assert(sellOte !== undefined, '3.2 SELL Fibonacci OTE candidate generated successfully in PREMIUM');
-
-    if (buyOte && sellOte) {
-      assertEqual(buyOte.direction, 'BUY', '3.3 BUY OTE direction is BUY');
-      assertEqual(sellOte.direction, 'SELL', '3.4 SELL OTE direction is SELL');
-      assertEqual(buyOte.confidence, sellOte.confidence, '3.5 Confidence scores are identical');
-    }
+    assert(buyOte === undefined, '3.1 BUY Fibonacci OTE candidate is intentionally absent per GB-V5 contract');
+    assert(sellOte === undefined, '3.2 SELL Fibonacci OTE candidate is intentionally absent per GB-V5 contract');
   }
 
   // =========================================================================

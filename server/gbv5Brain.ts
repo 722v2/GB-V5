@@ -63,17 +63,17 @@ export interface Gbv5Candidate {
 }
 
 export interface Gbv5BrainInput {
-  asset: AssetType;
+  asset?: AssetType;
   currentPrice: number;
-  balance: number;
+  balance?: number;
   candles1m?: Candle[];
-  candles5m: Candle[];
-  candles15m: Candle[];
-  candles1h: Candle[];
-  indicators5m: TechnicalIndicators;
-  indicators15m: TechnicalIndicators;
-  indicators1h: TechnicalIndicators;
-  brokerSpecs?: BrokerContractSpecs;
+  candles5m?: Candle[];
+  candles15m?: Candle[];
+  candles1h?: Candle[];
+  indicators5m?: TechnicalIndicators;
+  indicators15m?: TechnicalIndicators;
+  indicators1h?: TechnicalIndicators;
+  brokerSpecs?: Partial<BrokerContractSpecs> | BrokerContractSpecs;
   activeTradeDirection?: 'BUY' | 'SELL' | null;
   minConfidence?: number;
   currentSpread?: number;
@@ -112,19 +112,30 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
   const atr5m = Math.max(0.6, indicators5m?.atr14 || 1.8);
   const atr15m = Math.max(1.0, indicators15m?.atr14 || 2.5);
 
-  const safeCandles5m = (candles5m && Array.isArray(candles5m) && candles5m.length > 0)
-    ? candles5m
-    : [{ timestamp: Date.now(), open: currentPrice, high: currentPrice + 0.5, low: currentPrice - 0.5, close: currentPrice, volume: 100, isClosed: true }];
+  if (!candles5m || !Array.isArray(candles5m) || candles5m.length === 0) {
+    const evidenceBundle = buildCompleteEvidenceBundle({
+      currentPrice,
+      candles1m,
+      candles5m: [],
+      candles15m,
+      candles1h,
+      indicators5m,
+      indicators15m,
+      indicators1h,
+      currentSpread,
+    });
+    return { candidates: [], evidenceBundle };
+  }
 
-  const partition5m = partition5mCandles(safeCandles5m);
+  const partition5m = partition5mCandles(candles5m);
   const closed5m = partition5m.closedCandles || [];
-  const last5m = partition5m.lastClosedCandle || safeCandles5m[safeCandles5m.length - 1];
+  const last5m = partition5m.lastClosedCandle || candles5m[candles5m.length - 1];
   const prev5m = partition5m.prevClosedCandle || last5m;
 
   const evidenceBundle = buildCompleteEvidenceBundle({
     currentPrice,
     candles1m,
-    candles5m: safeCandles5m,
+    candles5m,
     candles15m,
     candles1h,
     indicators5m,
@@ -192,7 +203,7 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
       indicators5m,
       candles1h,
       candles15m,
-      candles5m: safeCandles5m,
+      candles5m,
       minRr: brokerSpecs.minRr ?? 1.2,
     });
 
@@ -517,7 +528,6 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
 // ============================================================================
 
 export async function executeGbv5Brain(input: Gbv5BrainInput): Promise<Gbv5BrainResult> {
-  const { candidates, evidenceBundle } = discoverGbv5Candidates(input);
   const {
     asset = 'XAU/USD',
     currentPrice,
@@ -525,7 +535,50 @@ export async function executeGbv5Brain(input: Gbv5BrainInput): Promise<Gbv5Brain
     activeTradeDirection = null,
     minConfidence = 70,
     brokerSpecs = DEFAULT_BROKER_SPECS,
+    candles5m = [],
   } = input;
+
+  if (!candles5m || !Array.isArray(candles5m) || candles5m.length === 0) {
+    const { evidenceBundle } = discoverGbv5Candidates(input);
+    const dataUnavailableSignal: TradeSignal = {
+      id: `sig_data_unavailable_${Date.now()}`,
+      timestamp: Date.now(),
+      asset,
+      signal: 'NO TRADE',
+      currentPrice,
+      entry: currentPrice,
+      stopLoss: 0,
+      slPoints: 0,
+      tp1: 0,
+      tp1Points: 0,
+      tp2: 0,
+      tp2Points: 0,
+      rr: 'N/A',
+      rrRatio: 0,
+      riskPercent: 0,
+      riskAmount: 0,
+      potentialProfit: 0,
+      potentialLoss: 0,
+      recommendedLotSize: 0,
+      confidence: 0,
+      timeframe: '5M',
+      setup: 'MARKET_DATA_UNAVAILABLE',
+      strategyFamily: 'MARKET_STRUCTURE',
+      mainReasons: ['بيانات السوق لشارت 5M غير متوفرة أو غير صالحة'],
+      invalidation: 'N/A',
+      noTradeReason: 'بيانات السوق لشارت 5M غير متوفرة أو غير صالحة',
+    };
+
+    return {
+      hasOpportunity: false,
+      selectedCandidate: null,
+      allCandidates: [],
+      finalSignal: dataUnavailableSignal,
+      evidenceBundle,
+    };
+  }
+
+  const { candidates, evidenceBundle } = discoverGbv5Candidates(input);
 
   // Filter candidates by minimum confidence & active trade direction
   let eligible = candidates.filter((c) => c.confidence >= minConfidence);
@@ -549,14 +602,15 @@ export async function executeGbv5Brain(input: Gbv5BrainInput): Promise<Gbv5Brain
       ? (selected.orderType === 'LIMIT' ? 'BUY LIMIT' : 'BUY NOW')
       : (selected.orderType === 'LIMIT' ? 'SELL LIMIT' : 'SELL NOW');
 
+    const riskDirection: 'BUY' | 'SELL' = decision.includes('BUY') ? 'BUY' : 'SELL';
     const riskEval = evaluateTradeRisk({
-      accountBalance: balance,
-      entryPrice: selected.entry,
-      stopLossPrice: selected.stopLoss,
-      takeProfit1Price: selected.tp1,
-      takeProfit2Price: selected.tp2,
+      balance,
+      entry: selected.entry,
+      stopLoss: selected.stopLoss,
+      tp1: selected.tp1,
+      tp2: selected.tp2,
       asset,
-      direction: decision,
+      direction: riskDirection,
       confidence: selected.confidence,
       brokerSpecs,
     });
@@ -620,6 +674,12 @@ export async function executeGbv5Brain(input: Gbv5BrainInput): Promise<Gbv5Brain
     tp2: 0,
     tp2Points: 0,
     rr: 'N/A',
+    rrRatio: 0,
+    riskPercent: 0,
+    riskAmount: 0,
+    potentialProfit: 0,
+    potentialLoss: 0,
+    recommendedLotSize: 0,
     confidence: 0,
     timeframe: 'M1 / M5',
     setup: 'No Viable Setup',

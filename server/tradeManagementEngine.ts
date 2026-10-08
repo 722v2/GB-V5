@@ -101,7 +101,7 @@ export class TradeManagementEngine {
       return [];
     }
 
-    const openTrades = storage.getTrades(300).filter(
+    const openTrades = storage.getActiveTrades().filter(
       (t) => t.result === 'OPEN' && t.isActive !== false
     );
 

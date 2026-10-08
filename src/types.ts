@@ -3,6 +3,13 @@ export type AssetType = 'XAU/USD' | 'BTC/USD';
 export type StrategyFamily =
   | 'MARKET_STRUCTURE'
   | 'LIQUIDITY_SWEEP'
+  | 'LIQUIDITY_SWEEP_REJECTION'
+  | 'STRUCTURE_BREAK'
+  | 'STRUCTURE_BREAK_RETEST'
+  | 'TREND_CONTINUATION'
+  | 'TREND_CONTINUATION_PULLBACK'
+  | 'RANGE_SWEEP'
+  | 'RANGE_SWEEP_SFP'
   | 'ORDER_BLOCK'
   | 'FVG_IMBALANCE'
   | 'FVG_REVERSAL'
@@ -130,7 +137,18 @@ export type CandidateLifecycleState =
   | 'INVALIDATED'
   | 'CLOSED'
   | 'EXPIRED'
+  | 'CANCELLED'
   | 'NOT_ENTERED';
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  duplicateReason?: string;
+  reason?: string;
+  allowExecution?: boolean;
+  status?: string;
+  details?: any;
+  isReentry?: boolean;
+}
 
 export interface CandidateLifecycleRecord {
   id: string;
@@ -190,16 +208,20 @@ export interface TechnicalIndicators {
   ema200: number;
   vwap: number;
   rsi14: number;
+  rsi?: number;
+  atr14: number;
+  atr?: number;
+  trendStrength?: number;
   macd: {
     macd: number;
     signal: number;
     histogram: number;
   };
-  atr14: number;
   bollingerBands: {
     upper: number;
     middle: number;
     lower: number;
+    bandwidth?: number;
   };
   swingHigh: number;
   swingLow: number;
@@ -484,6 +506,8 @@ export interface TradeSignal {
   lifecycleState?: CandidateLifecycleState;
   poiId?: string;
   patternMetadata?: Record<string, any>;
+  supportingConfluences?: string[];
+  confluenceScore?: number;
   structuralAnchorKey?: string;
   setupKey?: string;
   triggers?: string[];

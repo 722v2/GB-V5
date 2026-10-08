@@ -1,0 +1,87 @@
+tests/adversarialReplayScenariosAtoR.test.ts(387,64): error TS2345: Argument of type '{ atr14: number; ema20: number; ema50: number; ema200: number; vwap: number; rsi14: number; rsi?: number; atr?: number; trendStrength?: number; macd: { macd: number; signal: number; histogram: number; }; ... 32 more ...; isDataSufficient?: boolean; }' is not assignable to parameter of type 'number'.
+tests/adversarialReplayScenariosAtoR.test.ts(390,64): error TS2345: Argument of type '{ atr14: number; ema20: number; ema50: number; ema200: number; vwap: number; rsi14: number; rsi?: number; atr?: number; trendStrength?: number; macd: { macd: number; signal: number; histogram: number; }; ... 32 more ...; isDataSufficient?: boolean; }' is not assignable to parameter of type 'number'.
+tests/adversarialReplayScenariosAtoR.test.ts(393,70): error TS2345: Argument of type '{ atr14: number; ema20: number; ema50: number; ema200: number; vwap: number; rsi14: number; rsi?: number; atr?: number; trendStrength?: number; macd: { macd: number; signal: number; histogram: number; }; ... 32 more ...; isDataSufficient?: boolean; }' is not assignable to parameter of type 'number'.
+tests/antiChaseRegression.test.ts(281,93): error TS2339: Property 'timingWarning' does not exist on type 'SetupCandidate'.
+tests/antiChaseRegression.test.ts(286,25): error TS2339: Property 'timingWarning' does not exist on type 'SetupCandidate'.
+tests/antiChaseRegression.test.ts(286,72): error TS2339: Property 'timingWarning' does not exist on type 'SetupCandidate'.
+tests/antiChaseRegression.test.ts(288,25): error TS2339: Property 'timingWarning' does not exist on type 'SetupCandidate'.
+tests/batch11LiveSignalPersistenceLifecycle.test.ts(294,5): error TS2554: Expected 1-7 arguments, but got 10.
+tests/brainSignalUnificationRegression.test.ts(25,3): error TS2739: Type '{ ema20: number; ema50: number; rsi: number; macd: { macd: number; signal: number; histogram: number; }; atr: number; vwap: number; structure: "BULLISH"; swingHigh: number; swingLow: number; support: number; resistance: number; premiumDiscountZone: "DISCOUNT"; }' is missing the following properties from type 'TechnicalIndicators': ema200, rsi14, atr14, bollingerBands
+tests/brainSignalUnificationRegression.test.ts(173,11): error TS2740: Type '{ swingHigh: number; swingLow: number; support: number; resistance: number; atr: number; rsi: number; structure: "RANGING"; premiumDiscountZone: "EQUILIBRIUM"; }' is missing the following properties from type 'TechnicalIndicators': ema20, ema50, ema200, vwap, and 4 more.
+tests/candidateRankingRegression.test.ts(178,11): error TS2739: Type '{ ema20: number; ema50: number; rsi: number; macd: { macd: number; signal: number; histogram: number; }; atr: number; vwap: number; structure: "BULLISH"; swingHigh: number; swingLow: number; support: number; resistance: number; }' is missing the following properties from type 'TechnicalIndicators': ema200, rsi14, atr14, bollingerBands
+tests/comprehensiveRepairsRegression.test.ts(263,54): error TS2554: Expected 1 arguments, but got 4.
+tests/comprehensiveRepairsRegression.test.ts(264,22): error TS2339: Property 'tapCount' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/comprehensiveRepairsRegression.test.ts(266,22): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/comprehensiveRepairsRegression.test.ts(270,54): error TS2554: Expected 1 arguments, but got 4.
+tests/comprehensiveRepairsRegression.test.ts(271,22): error TS2339: Property 'tapCount' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/comprehensiveRepairsRegression.test.ts(273,22): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/comprehensiveRepairsRegression.test.ts(277,54): error TS2554: Expected 1 arguments, but got 4.
+tests/comprehensiveRepairsRegression.test.ts(278,22): error TS2339: Property 'tapCount' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/comprehensiveRepairsRegression.test.ts(280,22): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/confidenceCalibrationAndPartitioning.test.ts(41,7): error TS2353: Object literal may only specify known properties, and 'candleTime' does not exist in type '{ type: "BULLISH" | "BEARISH"; high: number; low: number; }'.
+tests/directionalSymmetry.test.ts(285,71): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/directionalSymmetry.test.ts(286,73): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/directionalSymmetry.test.ts(290,30): error TS2339: Property 'slQualityScore' does not exist on type '{ isProtected: boolean; isValid: boolean; slPoints: number; slScore: number; reason: string; }'.
+tests/directionalSymmetry.test.ts(290,60): error TS2339: Property 'slQualityScore' does not exist on type '{ isProtected: boolean; isValid: boolean; slPoints: number; slScore: number; reason: string; }'.
+tests/entrySlQualityRegression.test.ts(85,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(112,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(139,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(166,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(256,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(284,7): error TS2554: Expected 1-7 arguments, but got 8.
+tests/entrySlQualityRegression.test.ts(299,63): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(313,64): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(327,63): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(350,64): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(373,63): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(396,64): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(607,71): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(608,71): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(635,72): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entrySlQualityRegression.test.ts(636,72): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/entryTimingQualityRegression.test.ts(153,28): error TS2339: Property 'timing' does not exist on type '{ isValid: boolean; score: number; rejectionReason?: string; }'.
+tests/entryTimingQualityRegression.test.ts(191,28): error TS2339: Property 'timing' does not exist on type '{ isValid: boolean; score: number; rejectionReason?: string; }'.
+tests/entryTimingQualityRegression.test.ts(671,7): error TS2554: Expected 1-7 arguments, but got 9.
+tests/entryTimingQualityRegression.test.ts(697,7): error TS2554: Expected 1-7 arguments, but got 9.
+tests/entryTimingQualityRegression.test.ts(771,31): error TS2339: Property 'timing' does not exist on type '{ isValid: boolean; score: number; rejectionReason?: string; }'.
+tests/entryTimingQualityRegression.test.ts(771,47): error TS2339: Property 'timing' does not exist on type '{ isValid: boolean; score: number; rejectionReason?: string; }'.
+tests/opportunityDetectionAuditRegression.test.ts(120,5): error TS2345: Argument of type '{ selectedCandidate: { id: string; strategyFamily: any; setupName: string; direction: "BUY"; orderType: "MARKET"; entry: number; stopLoss: number; slPoints: number; tp1: number; tp1Points: number; ... 7 more ...; mainReasons: string[]; }; allCandidates: { id: string; strategyFamily: any; setupName: string; direction...' is not assignable to parameter of type '{ allCandidates: SetupCandidate[]; }'.
+  Types of property 'allCandidates' are incompatible.
+    Type '{ id: string; strategyFamily: any; setupName: string; direction: "BUY"; orderType: "MARKET"; entry: number; stopLoss: number; slPoints: number; tp1: number; tp1Points: number; tp1Rr: number; tp2: number; ... 5 more ...; mainReasons: string[]; }[]' is not assignable to type 'SetupCandidate[]'.
+      Type '{ id: string; strategyFamily: any; setupName: string; direction: "BUY"; orderType: "MARKET"; entry: number; stopLoss: number; slPoints: number; tp1: number; tp1Points: number; tp1Rr: number; tp2: number; ... 5 more ...; mainReasons: string[]; }' is missing the following properties from type 'SetupCandidate': family, strategyConfidence, executionQualityScore, entryTiming, and 6 more.
+tests/opportunityDetectionAuditRegression.test.ts(138,31): error TS2339: Property 'entry' does not exist on type '{ signal: SignalDecision; noTradeReason?: string; confidence: number; }'.
+tests/opportunityDetectionAuditRegression.test.ts(139,22): error TS2339: Property 'mainReasons' does not exist on type '{ signal: SignalDecision; noTradeReason?: string; confidence: number; }'.
+tests/opportunityDetectionAuditRegression.test.ts(218,59): error TS2554: Expected 1 arguments, but got 3.
+tests/opportunityDetectionAuditRegression.test.ts(219,33): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/opportunityDetectionAuditRegression.test.ts(221,24): error TS2339: Property 'multiplier' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/opportunityDetectionAuditRegression.test.ts(295,5): error TS2554: Expected 1 arguments, but got 9.
+tests/pipelineContractRegression.test.ts(105,5): error TS2353: Object literal may only specify known properties, and 'ema9' does not exist in type 'TechnicalIndicators'.
+tests/runGlobalLossMechanismForensics.test.ts(284,55): error TS2345: Argument of type '{ asset: string; balance: number; currentPrice: number; indicators1h: TechnicalIndicators; indicators15m: TechnicalIndicators; indicators5m: TechnicalIndicators; candles1h: Candle[]; candles15m: Candle[]; candles5m: Candle[]; brokerSpecs: { ...; }; }' is not assignable to parameter of type 'MultiStrategyEngineInput'.
+  Types of property 'asset' are incompatible.
+    Type 'string' is not assignable to type 'AssetType'.
+tests/runHtfTrendAlignmentForensics.test.ts(280,55): error TS2345: Argument of type '{ asset: string; balance: number; currentPrice: number; indicators1h: TechnicalIndicators; indicators15m: TechnicalIndicators; indicators5m: TechnicalIndicators; candles1h: Candle[]; candles15m: Candle[]; candles5m: Candle[]; brokerSpecs: { ...; }; }' is not assignable to parameter of type 'MultiStrategyEngineInput'.
+  Types of property 'asset' are incompatible.
+    Type 'string' is not assignable to type 'AssetType'.
+tests/runMultiRegimeCounterfactualValidation.test.ts(299,55): error TS2345: Argument of type '{ asset: string; balance: number; currentPrice: number; indicators1h: TechnicalIndicators; indicators15m: TechnicalIndicators; indicators5m: TechnicalIndicators; candles1h: Candle[]; candles15m: Candle[]; candles5m: Candle[]; brokerSpecs: { ...; }; }' is not assignable to parameter of type 'MultiStrategyEngineInput'.
+  Types of property 'asset' are incompatible.
+    Type 'string' is not assignable to type 'AssetType'.
+tests/runPostPatchAudit.test.ts(131,55): error TS2345: Argument of type '{ asset: string; balance: number; currentPrice: number; indicators1h: TechnicalIndicators; indicators15m: TechnicalIndicators; indicators5m: TechnicalIndicators; candles1h: Candle[]; candles15m: Candle[]; candles5m: Candle[]; brokerSpecs: { ...; }; }' is not assignable to parameter of type 'MultiStrategyEngineInput'.
+  Types of property 'asset' are incompatible.
+    Type 'string' is not assignable to type 'AssetType'.
+tests/runS4S11ForensicInvestigation.test.ts(170,55): error TS2345: Argument of type '{ asset: string; balance: number; currentPrice: number; indicators1h: TechnicalIndicators; indicators15m: TechnicalIndicators; indicators5m: TechnicalIndicators; candles1h: Candle[]; candles15m: Candle[]; candles5m: Candle[]; brokerSpecs: { ...; }; }' is not assignable to parameter of type 'MultiStrategyEngineInput'.
+  Types of property 'asset' are incompatible.
+    Type 'string' is not assignable to type 'AssetType'.
+tests/s12S10S8PrecisionRegression.test.ts(19,3): error TS2739: Type '{ atr14: number; rsi14: number; ema20: number; ema50: number; ema200: number; vwap: number; resistance: number; support: number; swingHigh: number; swingLow: number; isTrending: false; trendDirection: string; trendStrength: number; marketRegime: "NORMAL_RANGE"; }' is missing the following properties from type 'TechnicalIndicators': macd, bollingerBands, structure
+tests/s4S11ForensicOptimization.test.ts(20,3): error TS2739: Type '{ atr14: number; rsi14: number; ema20: number; ema50: number; ema200: number; vwap: number; resistance: number; support: number; swingHigh: number; swingLow: number; isTrending: false; trendDirection: string; trendStrength: number; marketRegime: "NORMAL_RANGE"; structure: "RANGING"; }' is missing the following properties from type 'TechnicalIndicators': macd, bollingerBands
+tests/signalConfluenceRegression.test.ts(613,46): error TS2554: Expected 1 arguments, but got 8.
+tests/signalConfluenceRegression.test.ts(627,47): error TS2554: Expected 1 arguments, but got 8.
+tests/strategyQualityPhase2To14Regression.test.ts(138,5): error TS2554: Expected 1-6 arguments, but got 7.
+tests/strategyQualityPhase2To14Regression.test.ts(153,54): error TS2554: Expected 1 arguments, but got 4.
+tests/strategyQualityPhase2To14Regression.test.ts(154,46): error TS2339: Property 'tapCount' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/strategyQualityPhase2To14Regression.test.ts(154,71): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/strategyQualityPhase2To14Regression.test.ts(168,54): error TS2554: Expected 1 arguments, but got 4.
+tests/strategyQualityPhase2To14Regression.test.ts(169,47): error TS2339: Property 'tapCount' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/strategyQualityPhase2To14Regression.test.ts(183,54): error TS2554: Expected 1 arguments, but got 4.
+tests/strategyQualityPhase2To14Regression.test.ts(184,44): error TS2339: Property 'isTradable' does not exist on type '{ state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string; }'.
+tests/tpSelectionRegression.test.ts(668,65): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.
+tests/tpSelectionRegression.test.ts(673,65): error TS2345: Argument of type 'TechnicalIndicators' is not assignable to parameter of type 'number'.

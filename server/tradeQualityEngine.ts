@@ -50,8 +50,42 @@ export class PoiFreshnessTracker {
     }
   }
 
-  public registerPoi(poi: PoiRecord): void {
+  public clear(): void {
+    this.pois.clear();
+  }
+
+  public registerOrUpdatePoi(poi: PoiRecord): void {
+    if (poi && poi.id) {
+      this.pois.set(poi.id, poi);
+    }
+  }
+
+  public registerPoi(
+    poiOrType: PoiRecord | any,
+    timeframe?: '1H' | '15M' | '5M',
+    direction?: 'BULLISH' | 'BEARISH',
+    top?: number,
+    bottom?: number,
+    timestamp?: number
+  ): PoiRecord {
+    if (typeof poiOrType === 'object' && poiOrType !== null && 'id' in poiOrType) {
+      this.registerOrUpdatePoi(poiOrType);
+      return poiOrType;
+    }
+    const id = `poi_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const poi: PoiRecord = {
+      id,
+      type: poiOrType,
+      timeframe: timeframe!,
+      direction: direction!,
+      top: top!,
+      bottom: bottom!,
+      createdTimestamp: timestamp || Date.now(),
+      tapCount: 0,
+      state: 'FRESH',
+    };
     this.registerOrUpdatePoi(poi);
+    return poi;
   }
 
   public evaluatePoiFreshness(poi: PoiRecord | string): { state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string } {
@@ -820,6 +854,7 @@ export function validateTradeSignalCandidate(
 
   // 1.1. Missing Structural POI Check (Single Indicator / Isolated Indicator rejection)
   if (
+    signal.strategyFamily === 'AI_RAW' ||
     String(signal.setupName || '').includes('Isolated RSI') ||
     String(signal.setupName || '').includes('Single Indicator') ||
     (!signal.poiMeta &&
@@ -921,8 +956,18 @@ export function validateTradeSignalCandidate(
   }
 
   // 2. Stop Loss Bounds Check
-  if (slDist < 3.0 || slDist > 9.0) {
-    return { isValid: false, score: 0, rejectionReason: 'INVALID_SL_DISTANCE (SL_OUT_OF_BOUNDS)' };
+  const broker = context?.brokerSpecs || {};
+  const minSlPts = Number(broker.minGoldSlPoints ?? broker.minSlPoints ?? 35);
+  const maxSlPts = Number(broker.maxGoldSlPoints ?? broker.maxSlPoints ?? 65);
+  const minSlDist = minSlPts * 0.1;
+  const maxSlDist = maxSlPts * 0.1;
+
+  if (slDist < minSlDist - 0.001 || slDist > maxSlDist + 0.001) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: `INVALID_SL_DISTANCE (SL_OUT_OF_BOUNDS: SL distance ${slDist.toFixed(2)} is outside allowed range ${minSlDist.toFixed(2)} - ${maxSlDist.toFixed(2)})`
+    };
   }
 
   // 3. RR Ratio Check

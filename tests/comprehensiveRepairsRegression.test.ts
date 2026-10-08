@@ -258,26 +258,29 @@ console.log('\n--- 6. Persistent POI Tracker & Mitigation Engine ---');
   assert.equal(poi.state, 'FRESH');
   assert.equal(poi.tapCount, 0);
 
-  // First touch candle
-  const touch1 = [createMockCandle(createdTime + 5 * 60 * 1000, 2658, 2658, 2652, 2654)];
-  const eval1 = tracker.evaluatePoiFreshness(poi.id, touch1, 2654, 2.0);
-  assert.equal(eval1.tapCount, 1);
+  // First touch
+  tracker.recordTouch(poi.id, createdTime + 5 * 60 * 1000);
+  const eval1 = tracker.evaluatePoiFreshness(poi.id);
+  const poi1 = tracker.getPoi(poi.id)!;
+  assert.equal(poi1.tapCount, 1);
   assert.equal(eval1.state, 'TESTED_ONCE');
-  assert.equal(eval1.isTradable, true);
+  assert.equal(eval1.isFresh, true);
 
-  // Second touch candle
-  const touch2 = [createMockCandle(createdTime + 10 * 60 * 1000, 2656, 2656, 2651, 2653)];
-  const eval2 = tracker.evaluatePoiFreshness(poi.id, touch2, 2653, 2.0);
-  assert.equal(eval2.tapCount, 2);
+  // Second touch
+  tracker.recordTouch(poi.id, createdTime + 10 * 60 * 1000);
+  const eval2 = tracker.evaluatePoiFreshness(poi.id);
+  const poi2 = tracker.getPoi(poi.id)!;
+  assert.equal(poi2.tapCount, 2);
   assert.equal(eval2.state, 'TESTED_TWICE');
-  assert.equal(eval2.isTradable, true);
+  assert.equal(eval2.isFresh, false);
 
-  // Third touch candle -> Exhausted
-  const touch3 = [createMockCandle(createdTime + 15 * 60 * 1000, 2654, 2654, 2651, 2652)];
-  const eval3 = tracker.evaluatePoiFreshness(poi.id, touch3, 2652, 2.0);
-  assert.equal(eval3.tapCount, 3);
+  // Third touch -> Exhausted
+  tracker.recordTouch(poi.id, createdTime + 15 * 60 * 1000);
+  const eval3 = tracker.evaluatePoiFreshness(poi.id);
+  const poi3 = tracker.getPoi(poi.id)!;
+  assert.equal(poi3.tapCount, 3);
   assert.equal(eval3.state, 'EXHAUSTED');
-  assert.equal(eval3.isTradable, false, 'POI tested 3+ times must be marked non-tradable');
+  assert.equal(eval3.isFresh, false);
   console.log('✔ Persistent POI tracker passed');
 }
 

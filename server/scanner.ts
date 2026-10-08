@@ -54,6 +54,43 @@ export function isInternalTimerEnabled(): boolean {
   return true;
 }
 
+/**
+ * Normalizes live market quote timestamps strictly fail-closed.
+ * Never fabricates or falls back to system wall-clock (Date.now()).
+ * Accepts valid positive finite numeric timestamps, numeric strings, and parseable ISO-8601 date strings.
+ * Rejects missing, null, undefined, NaN, Infinity, non-positive, or unparseable timestamps.
+ */
+export function normalizeMarketTimestamp(raw: unknown): number | null {
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) && !Number.isNaN(raw) && raw > 0 ? raw : null;
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) {
+      return null;
+    }
+    // Check if numeric string (e.g. "1712574000000")
+    const num = Number(trimmed);
+    if (Number.isFinite(num) && !Number.isNaN(num) && num > 0) {
+      return num;
+    }
+    // Check if parseable ISO-8601 or date string
+    const parsed = Date.parse(trimmed);
+    if (Number.isFinite(parsed) && !Number.isNaN(parsed) && parsed > 0) {
+      return parsed;
+    }
+    return null;
+  }
+  if (raw instanceof Date) {
+    const time = raw.getTime();
+    return Number.isFinite(time) && !Number.isNaN(time) && time > 0 ? time : null;
+  }
+  return null;
+}
+
 class LiveMarketScanner {
   private config: ScannerConfig = {
     enabled: true,
@@ -473,26 +510,141 @@ class LiveMarketScanner {
 
       // Step 3: Calculate required technical/market-structure data
       // Partition candles across all timeframes so technical analysis and AI receive ONLY closed candles
-      const quoteTime = typeof quote.timestamp === 'number' ? quote.timestamp : (Number(quote.timestamp) || Date.now());
+      const quoteTime = normalizeMarketTimestamp(quote?.timestamp);
+      if (quoteTime === null) {
+        const errorReason = `DATA_INTEGRITY_FAIL: توقيت بيانات السوق المباشرة غير صالح أو مفقود (timestamp: ${String(quote?.timestamp)})`;
+        console.warn(`[LiveMarketScanner] ${errorReason}. Blocking trade scan.`);
+        this.config.scanCount += 1;
+        this.config.lastScanStatus = errorReason;
+        const noTradeSignal: TradeSignal = {
+          id: `scan_invalid_timestamp_${Date.now()}`,
+          timestamp: Date.now(),
+          asset,
+          signal: 'NO TRADE',
+          currentPrice,
+          entry: currentPrice,
+          stopLoss: currentPrice,
+          slPoints: 0,
+          tp1: currentPrice,
+          tp1Points: 0,
+          tp1Rr: 0,
+          tp1RrString: '1:0',
+          tp2: currentPrice,
+          tp2Points: 0,
+          tp2Rr: 0,
+          tp2RrString: '1:0',
+          primaryTarget: 'TP1',
+          rr: '1:0',
+          rrRatio: 0,
+          riskPercent: 0,
+          riskAmount: 0,
+          potentialProfit: 0,
+          potentialLoss: 0,
+          recommendedLotSize: 0,
+          confidence: 0,
+          timeframe: '5M',
+          setup: 'DATA_INTEGRITY_FAIL',
+          mainReasons: [errorReason],
+          invalidation: 'Invalid or missing live market quote timestamp',
+          noTradeReason: errorReason,
+        };
+
+        storage.saveScan({
+          id: `scan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: Date.now(),
+          asset,
+          price: currentPrice,
+          signal: 'NO TRADE',
+          decision: 'NO TRADE',
+          strategy: 'Market Data Integrity Gate',
+          confidence: 0,
+          status: 'DATA_INTEGRITY_FAIL',
+          rejectionReason: errorReason,
+          details: {
+            reason: errorReason,
+            rawTimestamp: String(quote?.timestamp),
+          },
+        });
+
+        return noTradeSignal;
+      }
+
       const partition1h = partition1hCandles(candles1h, quoteTime);
-      const closedCandles1h = partition1h.isValid && partition1h.closedCandles.length > 0
-        ? partition1h.closedCandles
-        : candles1h;
-
       const partition15m = partition15mCandles(candles15m, quoteTime);
-      const closedCandles15m = partition15m.isValid && partition15m.closedCandles.length > 0
-        ? partition15m.closedCandles
-        : candles15m;
-
       const partition5m = partition5mCandles(candles5m, quoteTime);
-      const closedCandles5m = partition5m.isValid && partition5m.closedCandles.length > 0
-        ? partition5m.closedCandles
-        : candles5m;
-
       const partition1m = partition1mCandles(candles1m, quoteTime);
-      const closedCandles1m = partition1m.isValid && partition1m.closedCandles.length > 0
-        ? partition1m.closedCandles
-        : candles1m;
+
+      const partitions = [
+        { tf: '1H', part: partition1h },
+        { tf: '15M', part: partition15m },
+        { tf: '5M', part: partition5m },
+        { tf: '1M', part: partition1m },
+      ];
+
+      const failedPartition = partitions.find((p) => !p.part.isValid || p.part.closedCandles.length === 0);
+      if (failedPartition) {
+        const errorReason = `DATA_INTEGRITY_FAIL: فشل تجزئة شموع ${failedPartition.tf} المغلقة (${failedPartition.part.unreliableReason || 'لا توجد شموع مغلقة'})`;
+        console.warn(`[LiveMarketScanner] ${errorReason}. Blocking trade scan.`);
+        this.config.scanCount += 1;
+        this.config.lastScanStatus = errorReason;
+        const noTradeSignal: TradeSignal = {
+          id: `scan_partition_fail_${Date.now()}`,
+          timestamp: Date.now(),
+          asset,
+          signal: 'NO TRADE',
+          currentPrice,
+          entry: currentPrice,
+          stopLoss: currentPrice,
+          slPoints: 0,
+          tp1: currentPrice,
+          tp1Points: 0,
+          tp1Rr: 0,
+          tp1RrString: '1:0',
+          tp2: currentPrice,
+          tp2Points: 0,
+          tp2Rr: 0,
+          tp2RrString: '1:0',
+          primaryTarget: 'TP1',
+          rr: '1:0',
+          rrRatio: 0,
+          riskPercent: 0,
+          riskAmount: 0,
+          potentialProfit: 0,
+          potentialLoss: 0,
+          recommendedLotSize: 0,
+          confidence: 0,
+          timeframe: '5M',
+          setup: 'DATA_INTEGRITY_FAIL',
+          mainReasons: [errorReason],
+          invalidation: 'Missing or unpartitioned closed market data',
+          noTradeReason: errorReason,
+        };
+
+        storage.saveScan({
+          id: `scan_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          timestamp: Date.now(),
+          asset,
+          price: currentPrice,
+          signal: 'NO TRADE',
+          decision: 'NO TRADE',
+          strategy: 'Market Data Integrity Gate',
+          confidence: 0,
+          status: 'DATA_INTEGRITY_FAIL',
+          rejectionReason: errorReason,
+          details: {
+            reason: errorReason,
+            timeframe: failedPartition.tf,
+            unreliableReason: failedPartition.part.unreliableReason,
+          },
+        });
+
+        return noTradeSignal;
+      }
+
+      const closedCandles1h = partition1h.closedCandles;
+      const closedCandles15m = partition15m.closedCandles;
+      const closedCandles5m = partition5m.closedCandles;
+      const closedCandles1m = partition1m.closedCandles;
 
       const ind1h = analyzeTechnicals(closedCandles1h);
       const ind15m = analyzeTechnicals(closedCandles15m);

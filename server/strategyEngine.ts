@@ -31,9 +31,11 @@ export interface MultiStrategyEngineInput {
   candles15m?: Candle[];
   candles5m: Candle[];
   candles1m?: Candle[];
-  brokerSpecs?: BrokerContractSpecs;
+  brokerSpecs?: Partial<BrokerContractSpecs> | BrokerContractSpecs;
   activeTradeDirection?: 'BUY' | 'SELL' | null;
   minConfidence?: number;
+  currentSpread?: number;
+  losingStreak?: number;
 }
 
 export interface SetupCandidate {
@@ -66,6 +68,7 @@ export interface SetupCandidate {
   invalidation: string;
   supportingConfluences: string[];
   patternMetadata?: Record<string, any>;
+  poiId?: string;
   rawScoreBreakdown?: {
     structureScore: number;
     liquidityScore: number;
@@ -77,9 +80,11 @@ export interface SetupCandidate {
 
 export interface MultiStrategyEngineResult {
   hasOpportunity: boolean;
+  hasValidSignal?: boolean;
   selectedCandidate: SetupCandidate | null;
   allCandidates: SetupCandidate[];
   finalSignal: TradeSignal;
+  noTradeReason?: string;
 }
 
 export function extractSessionExtremes(candles: Candle[]): {
@@ -107,6 +112,71 @@ export function extractSessionExtremes(candles: Candle[]): {
     nyHigh: maxHigh,
     nyLow: minLow,
   };
+}
+
+/**
+ * Computes candidate quality score matching executeGbv5Brain semantics:
+ * confluenceScore * (tp1Rr >= 2.0 ? 1.1 : 1.0)
+ */
+export function computeCandidateQualityScore(candidate: SetupCandidate): number {
+  const confluence = typeof candidate.score === 'number' ? candidate.score : 0;
+  const rrMultiplier = (candidate.tp1Rr ?? 0) >= 2.0 ? 1.1 : 1.0;
+  return confluence * rrMultiplier;
+}
+
+/**
+ * Deterministically ranks candidates by quality:
+ * 1. Ranking score: confluenceScore * (tp1Rr >= 2.0 ? 1.1 : 1.0)
+ * 2. Quality fields tie-breaking:
+ *    a. raw confidence
+ *    b. tp1Rr
+ *    c. tp2Rr
+ *    d. raw confluence score
+ * 3. Stable deterministic tie-breaker for identical metrics:
+ *    a. strategyFamily / family
+ *    b. setupName
+ *    c. direction
+ */
+export function compareCandidatesByQuality(a: SetupCandidate, b: SetupCandidate): number {
+  // 1. Primary GB-V5 ranking score: confluenceScore * (tp1Rr >= 2.0 ? 1.1 : 1.0)
+  const scoreA = computeCandidateQualityScore(a);
+  const scoreB = computeCandidateQualityScore(b);
+  if (Math.abs(scoreB - scoreA) > 1e-6) {
+    return scoreB - scoreA;
+  }
+
+  // 2. Tie-break: raw confidence (higher is better)
+  const confDiff = (b.confidence ?? 0) - (a.confidence ?? 0);
+  if (Math.abs(confDiff) > 1e-6) {
+    return confDiff;
+  }
+
+  // 3. Tie-break: TP1 reward-to-risk ratio (higher is better)
+  const tp1RrDiff = (b.tp1Rr ?? 0) - (a.tp1Rr ?? 0);
+  if (Math.abs(tp1RrDiff) > 1e-6) {
+    return tp1RrDiff;
+  }
+
+  // 4. Tie-break: TP2 reward-to-risk ratio (higher is better)
+  const tp2RrDiff = (b.tp2Rr ?? 0) - (a.tp2Rr ?? 0);
+  if (Math.abs(tp2RrDiff) > 1e-6) {
+    return tp2RrDiff;
+  }
+
+  // 5. Tie-break: raw unweighted confluence score (higher is better)
+  const rawScoreDiff = (b.score ?? 0) - (a.score ?? 0);
+  if (Math.abs(rawScoreDiff) > 1e-6) {
+    return rawScoreDiff;
+  }
+
+  // 6. Strict deterministic tie-breaker on stable strings
+  const familyCmp = (a.family || '').localeCompare(b.family || '');
+  if (familyCmp !== 0) return familyCmp;
+
+  const nameCmp = (a.setupName || '').localeCompare(b.setupName || '');
+  if (nameCmp !== 0) return nameCmp;
+
+  return (a.direction || '').localeCompare(b.direction || '');
 }
 
 export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput): MultiStrategyEngineResult {
@@ -167,7 +237,19 @@ export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput)
     },
   }));
 
-  const selected = mappedCandidates.length > 0 ? mappedCandidates[0] : null;
+  // Deterministically rank all discovered candidates by quality
+  const rankedCandidates = [...mappedCandidates].sort(compareCandidatesByQuality);
+
+  // Filter eligible candidates by minimum confidence & active trade direction
+  const minConf = brainInput.minConfidence ?? 70;
+  let eligibleCandidates = rankedCandidates.filter((c) => (c.confidence ?? 0) >= minConf);
+
+  if (brainInput.activeTradeDirection) {
+    eligibleCandidates = eligibleCandidates.filter((c) => c.direction === brainInput.activeTradeDirection);
+  }
+
+  // Strongest eligible candidate selected regardless of discovery order
+  const selected = eligibleCandidates.length > 0 ? eligibleCandidates[0] : null;
 
   const finalSignal: TradeSignal = {
     id: `sig_${Date.now()}`,
@@ -186,18 +268,31 @@ export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput)
     tp2Points: selected ? selected.tp2Points : 0,
     tp2Rr: selected ? selected.tp2Rr : 0,
     rr: selected ? `1:${selected.tp1Rr.toFixed(2)}` : 'N/A',
+    rrRatio: selected ? selected.tp1Rr : 0,
+    riskPercent: 0,
+    riskAmount: 0,
+    potentialProfit: 0,
+    potentialLoss: 0,
+    recommendedLotSize: 0,
     confidence: selected ? selected.confidence : 0,
+    strategyConfidence: selected ? selected.strategyConfidence : 0,
+    executionQualityScore: selected ? selected.executionQualityScore : 0,
+    confluenceScore: selected ? selected.score : undefined,
     timeframe: selected ? selected.timeframe : 'M1 / M5',
     setup: selected ? selected.setupName : 'No Setup',
-    strategyFamily: selected ? selected.family : 'MARKET_STRUCTURE',
+    strategyFamily: selected ? (selected.strategyFamily || selected.family) : 'MARKET_STRUCTURE',
     mainReasons: selected ? selected.mainReasons : ['No candidate identified'],
     invalidation: selected ? selected.invalidation : 'N/A',
+    supportingConfluences: selected ? selected.supportingConfluences : undefined,
+    patternMetadata: selected ? selected.patternMetadata : undefined,
   };
 
   return {
     hasOpportunity: selected !== null,
+    hasValidSignal: selected !== null,
     selectedCandidate: selected,
     allCandidates: mappedCandidates,
     finalSignal,
+    noTradeReason: finalSignal.noTradeReason,
   };
 }
