@@ -18,7 +18,7 @@ services:
       - key: NVIDIA_BASE_URL
         value: https://integrate.api.nvidia.com/v1
       - key: NVIDIA_MODEL
-        value: deepseek-ai/deepseek-v4-flash-0731
+        value: meta/llama-3.2-11b-vision-instruct
       - key: NVIDIA_API_KEY
         sync: false
       - key: TELEGRAM_BOT_TOKEN
