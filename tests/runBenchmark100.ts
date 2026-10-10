@@ -1,16 +1,17 @@
 import { generate100Scenarios, runScenario, ScenarioResultRow } from './benchmark100Regression.js';
-import { getOpenRouterClient } from '../server/geminiTrader.js';
+import { getActiveAiClient } from '../server/geminiTrader.js';
 
 async function main() {
   console.log('========================================================================================================');
-  console.log('🚀 RUNNING 100-SCENARIO READ-ONLY REGRESSION BENCHMARK FOR GEMINI 2.5 FLASH LITE');
+  console.log('🚀 RUNNING 100-SCENARIO READ-ONLY REGRESSION BENCHMARK FOR AI PROVIDER INFERENCE');
   console.log('========================================================================================================\n');
 
-  const ai = getOpenRouterClient();
-  if (!ai) {
-    console.error('❌ Could not initialize OpenRouter client. Check API key.');
+  const activeAi = getActiveAiClient();
+  if (!activeAi) {
+    console.error('❌ Could not initialize AI client. Check API key and configuration.');
     process.exit(1);
   }
+  const ai = activeAi.client;
 
   const scenarios = generate100Scenarios();
   console.log(`Generated ${scenarios.length} scenarios (60 Arabic, 40 English across 20 distinct market archetypes).`);
@@ -22,8 +23,8 @@ async function main() {
   let parserSuccessCount = 0;
   let fallbackCount = 0;
 
-  // Let's run scenarios with modest batching / pacing to respect OpenRouter rate limits
-  console.log('Executing live inference on google/gemini-2.5-flash-lite...\n');
+  // Let's run scenarios with modest batching / pacing
+  console.log(`Executing live inference on provider (${activeAi.config.provider} - ${activeAi.config.model})...\n`);
 
   for (let i = 0; i < scenarios.length; i++) {
     const sc = scenarios[i];

@@ -40,30 +40,31 @@ console.log('\n--- 1. AI Provider Routing ---');
 {
   const origEnv = { ...process.env };
 
-  // Case A: Specific OpenRouter configuration
-  process.env.AI_PROVIDER = 'openrouter';
-  process.env.OPENROUTER_API_KEY = 'sk-or-v1-testkey1234567890';
+  // Case A: Custom provider configuration
+  process.env.AI_PROVIDER = 'custom';
+  process.env.AI_API_KEY = 'sk-custom-testkey1234567890';
+  process.env.AI_BASE_URL = 'https://custom-provider.example.com/v1';
+  process.env.AI_MODEL = 'custom-model-v1';
   delete process.env.NVIDIA_API_KEY;
-  const configOR = resolveAiProviderConfig();
-  assert.equal(configOR.provider, 'openrouter', 'Should resolve openrouter when requested');
-  assert.equal(configOR.apiKey, 'sk-or-v1-testkey1234567890');
-  assert.ok(configOR.baseURL.includes('openrouter'), 'BaseURL should be openrouter');
+  const configCustom = resolveAiProviderConfig();
+  assert.equal(configCustom.provider, 'custom', 'Should resolve custom when requested');
+  assert.equal(configCustom.apiKey, 'sk-custom-testkey1234567890');
+  assert.ok(configCustom.baseURL.includes('custom-provider'), 'BaseURL should match custom provider');
 
   // Case B: Specific NVIDIA configuration
+  delete process.env.AI_API_KEY;
   process.env.AI_PROVIDER = 'nvidia';
   process.env.NVIDIA_API_KEY = 'nvapi-testkey1234567890';
-  delete process.env.OPENROUTER_API_KEY;
   const configNV = resolveAiProviderConfig();
   assert.equal(configNV.provider, 'nvidia', 'Should resolve nvidia when requested');
   assert.equal(configNV.apiKey, 'nvapi-testkey1234567890');
   assert.ok(configNV.baseURL.includes('nvidia'), 'BaseURL should be nvidia');
 
-  // Case C: Mismatch prevention - requested NVIDIA but only OpenRouter key is available
-  process.env.AI_PROVIDER = 'nvidia';
+  // Case C: Unconfigured environment resolution
+  delete process.env.AI_PROVIDER;
   delete process.env.NVIDIA_API_KEY;
-  process.env.OPENROUTER_API_KEY = 'sk-or-v1-testkey1234567890';
-  const configMismatch = resolveAiProviderConfig();
-  assert.equal(configMismatch.provider, 'none', 'Must NOT send OpenRouter key to NVIDIA');
+  const configNone = resolveAiProviderConfig();
+  assert.equal(configNone.provider, 'none', 'Must resolve to none when unconfigured');
 
   // Restore env
   process.env = origEnv;

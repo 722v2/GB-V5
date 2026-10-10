@@ -1,4 +1,4 @@
-import { getOpenRouterClient, XAUUSD_TRADE_SIGNAL_JSON_SCHEMA, parseAndValidateAiResponse } from '../server/geminiTrader.js';
+import { getActiveAiClient, XAUUSD_TRADE_SIGNAL_JSON_SCHEMA, parseAndValidateAiResponse } from '../server/geminiTrader.js';
 import { validateTradeSignalCandidate } from '../server/tradeQualityEngine.js';
 import { generateMultiStrategyCandidates } from '../server/strategyEngine.js';
 import { analyzeTechnicals } from '../server/indicators.js';

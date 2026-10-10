@@ -27,22 +27,22 @@ console.log('[Group 1] AI Provider Tuple Resolution & Isolation');
 {
   const origEnv = { ...process.env };
 
-  // Case 1: OpenRouter Key present
-  process.env.OPENROUTER_API_KEY = 'sk-or-v1-abcdef1234567890abcdef1234567890';
+  // Case 1: Custom AI Provider configured
+  process.env.AI_PROVIDER = 'custom';
+  process.env.AI_API_KEY = 'sk-custom-1234567890abcdef';
+  process.env.AI_BASE_URL = 'https://custom-ai.example.com/v1';
+  process.env.AI_MODEL = 'custom-model-v1';
   process.env.NVIDIA_API_KEY = 'nvapi-98765432109876543210';
-  process.env.OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-  process.env.NVIDIA_BASE_URL = 'https://integrate.api.nvidia.com/v1';
-  process.env.OPENROUTER_MODEL = 'google/gemini-2.5-flash-lite';
-  process.env.NVIDIA_MODEL = 'deepseek-ai/deepseek-v4-flash-0731';
 
   let config = resolveAiProviderConfig();
-  assert(config.provider === 'openrouter', 'Selects OpenRouter when OPENROUTER_API_KEY is present');
-  assert(config.baseURL === 'https://openrouter.ai/api/v1', 'Uses OpenRouter baseURL with OpenRouter key');
-  assert(config.model === 'google/gemini-2.5-flash-lite', 'Uses OpenRouter model with OpenRouter key');
-  assert(config.apiKey === 'sk-or-v1-abcdef1234567890abcdef1234567890', 'Uses OpenRouter key');
+  assert(config.provider === 'custom', 'Selects custom provider when AI_API_KEY, AI_BASE_URL, and AI_MODEL are present');
+  assert(config.baseURL === 'https://custom-ai.example.com/v1', 'Uses custom baseURL');
+  assert(config.model === 'custom-model-v1', 'Uses custom model');
+  assert(config.apiKey === 'sk-custom-1234567890abcdef', 'Uses custom API key');
 
   // Case 2: Only NVIDIA Key present
-  delete process.env.OPENROUTER_API_KEY;
+  delete process.env.AI_API_KEY;
+  delete process.env.AI_PROVIDER;
   config = resolveAiProviderConfig();
   assert(config.provider === 'nvidia', 'Selects NVIDIA when only NVIDIA_API_KEY is present');
   assert(config.baseURL === 'https://integrate.api.nvidia.com/v1', 'Uses NVIDIA baseURL with NVIDIA key');

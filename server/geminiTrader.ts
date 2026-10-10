@@ -121,7 +121,7 @@ export function parseAndValidateAiResponse(rawContent: any): {
 }
 
 export interface AiProviderConfig {
-  provider: 'openrouter' | 'nvidia' | 'none';
+  provider: string;
   apiKey: string;
   baseURL: string;
   model: string;
@@ -133,29 +133,31 @@ export function resolveAiProviderConfig(): AiProviderConfig {
     const trimmed = key.trim();
     return (
       trimmed.length >= 10 &&
-      trimmed !== 'MY_OPENROUTER_API_KEY' &&
       trimmed !== 'MY_NVIDIA_API_KEY' &&
       !trimmed.includes('YOUR_API_KEY')
     );
   };
 
-  const openRouterKey = (process.env.OPENROUTER_API_KEY || '').trim();
-  const nvidiaKey = (process.env.NVIDIA_API_KEY || '').trim();
+  const requestedProvider = (process.env.AI_PROVIDER || '').trim().toLowerCase();
+  const customKey = (process.env.AI_API_KEY || '').trim();
+  const customBaseURL = (process.env.AI_BASE_URL || '').trim();
+  const customModel = (process.env.AI_MODEL || '').trim();
 
-  if (isKeyValid(openRouterKey)) {
+  if (isKeyValid(customKey) && customBaseURL && customModel) {
     return {
-      provider: 'openrouter',
-      apiKey: openRouterKey,
-      baseURL: 'https://openrouter.ai/api/v1',
-      model: process.env.OPENROUTER_MODEL || 'google/gemini-2.5-flash-lite',
+      provider: requestedProvider || 'custom',
+      apiKey: customKey,
+      baseURL: customBaseURL,
+      model: customModel,
     };
   }
 
-  if (isKeyValid(nvidiaKey)) {
+  const nvidiaKey = (process.env.NVIDIA_API_KEY || '').trim();
+  if (isKeyValid(nvidiaKey) && (requestedProvider === 'nvidia' || !requestedProvider)) {
     return {
       provider: 'nvidia',
       apiKey: nvidiaKey,
-      baseURL: 'https://integrate.api.nvidia.com/v1',
+      baseURL: process.env.NVIDIA_BASE_URL || 'https://integrate.api.nvidia.com/v1',
       model: process.env.NVIDIA_MODEL || 'deepseek-ai/deepseek-v4-flash-0731',
     };
   }
@@ -190,11 +192,6 @@ export function getActiveAiClient(): { client: OpenAI; config: AiProviderConfig 
   }
 
   return { client: activeAiClientInstance, config };
-}
-
-export function getOpenRouterClient(): OpenAI | null {
-  const active = getActiveAiClient();
-  return active ? active.client : null;
 }
 
 export interface MarketAnalysisInput {
