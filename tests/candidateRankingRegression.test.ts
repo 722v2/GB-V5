@@ -175,6 +175,28 @@ async function runCandidateRankingTests() {
       });
     }
 
+    const candles1m: Candle[] = [];
+    for (let i = 0; i < 30; i++) {
+      candles1m.push({
+        timestamp: baseTime + i * 60000,
+        open: 2505 + i * 0.1,
+        high: 2515 + i * 0.1,
+        low: 2504 + i * 0.1,
+        close: 2512 + i * 0.1,
+        volume: 1500,
+        isClosed: true,
+      });
+    }
+    candles1m[candles1m.length - 1] = {
+      timestamp: baseTime + 29 * 60000,
+      open: 2508,
+      high: 2515,
+      low: 2507,
+      close: 2512, // > swingHigh 2510
+      volume: 2000,
+      isClosed: true,
+    };
+
     const ind5m: TechnicalIndicators = {
       ema20: 2503,
       ema50: 2498,
@@ -192,8 +214,9 @@ async function runCandidateRankingTests() {
     const input: MultiStrategyEngineInput = {
       asset: 'XAU/USD',
       balance: 100,
-      currentPrice: 2501,
+      currentPrice: 2512,
       candles5m,
+      candles1m,
       indicators5m: ind5m,
       indicators15m: { ...ind5m, structure: 'BULLISH' },
       indicators1h: { ...ind5m, structure: 'BULLISH' },

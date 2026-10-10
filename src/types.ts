@@ -216,6 +216,9 @@ export interface TechnicalIndicators {
     macd: number;
     signal: number;
     histogram: number;
+    prevHistogram?: number;
+    recentCrossoverBarsAgo?: number;
+    zeroLineTransition?: 'CROSSED_ABOVE' | 'CROSSED_BELOW' | 'NONE';
   };
   bollingerBands: {
     upper: number;
@@ -417,8 +420,8 @@ export const DEFAULT_BROKER_SETTINGS: BrokerSettings = {
   minimumLot: 0.01,
   maximumLot: 100,
   lotStep: 0.01,
-  minGoldSlPoints: 40,
-  maxGoldSlPoints: 50,
+  minGoldSlPoints: 35,
+  maxGoldSlPoints: 85,
   minRr: 1.5,
   maxLoss: 5.0,
 };

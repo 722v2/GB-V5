@@ -51,7 +51,7 @@ CORS(app)
 
 # Environment configuration
 PORT = int(os.environ.get("PORT", 5001))
-MT5_API_KEY = os.environ.get("MT5_API_KEY", "gold_ai_secret_key_2026")
+MT5_API_KEY = os.environ.get("MT5_BRIDGE_TOKEN", os.environ.get("MT5_API_KEY", ""))
 MT5_ACCOUNT = os.environ.get("MT5_ACCOUNT", "")
 MT5_PASSWORD = os.environ.get("MT5_PASSWORD", "")
 MT5_SERVER = os.environ.get("MT5_SERVER", "")

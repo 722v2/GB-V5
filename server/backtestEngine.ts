@@ -15,6 +15,7 @@ export interface BacktestRequest {
   customBarsCount?: number;
   riskPercent?: number;
   allowAvailableSlice?: boolean;
+  brokerSpecs?: any;
 }
 
 export interface BacktestTrade {
@@ -110,6 +111,7 @@ export interface BacktestSummary {
   dailyTradesDistribution: Record<string, number>;
   timeRange: string;
   candlesEvaluated: number;
+  candlesCount1m?: number;
   candlesCount1h: number;
   candlesCount15m: number;
   candlesCount5m: number;
@@ -180,6 +182,7 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
   const all1h = datasetResult.candles1h;
   const all15m = datasetResult.candles15m;
   const all5m = datasetResult.candles5m;
+  const all1m = datasetResult.candles1m || [];
   const validation = datasetResult.validation;
 
   if (all5m.length < 30) {
@@ -207,6 +210,7 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
   const availableOldestTimestamp = all5m[0]?.timestamp || targetStartTime;
   const warmupStartTime = Math.max(availableOldestTimestamp, targetStartTime - warmupDays * 24 * 60 * 60 * 1000);
 
+  const candles1m = all1m.filter((c) => c.timestamp >= warmupStartTime && c.timestamp <= endTimestamp);
   const candles5m = all5m.filter((c) => c.timestamp >= warmupStartTime && c.timestamp <= endTimestamp);
   const candles15m = all15m.filter((c) => c.timestamp >= warmupStartTime && c.timestamp <= endTimestamp);
   const candles1h = all1h.filter((c) => c.timestamp >= warmupStartTime - 48 * 3600 * 1000 && c.timestamp <= endTimestamp);
@@ -215,7 +219,7 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
   const activeCandles15m = candles15m.filter((c) => c.timestamp >= targetStartTime);
   const activeCandles1h = candles1h.filter((c) => c.timestamp >= targetStartTime);
 
-  console.log(`[BacktestEngine] Range ${timeRange}: Total 5M with warmup: ${candles5m.length}, Active 5M: ${activeCandles5m.length}, Active 15M: ${activeCandles15m.length}, Active 1H: ${activeCandles1h.length}`);
+  console.log(`[BacktestEngine] Range ${timeRange}: Total 1M: ${candles1m.length}, Total 5M with warmup: ${candles5m.length}, Active 5M: ${activeCandles5m.length}, Active 15M: ${activeCandles15m.length}, Active 1H: ${activeCandles1h.length}`);
 
   let runningBalance = initialCapital;
   let peakBalance = initialCapital;
@@ -326,8 +330,70 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
       modificationReason: string;
     } | null = null;
 
+    const minSlConfigured = request.brokerSpecs?.minGoldSlPoints ?? 35;
+    const maxSlConfigured = request.brokerSpecs?.maxGoldSlPoints ?? 85;
+
+    // 0. Primary GB-V5 Brain Canonical Candidate Discovery (M1 Primary with M5/M15/H1 context)
+    const history1m = candles1m.filter((c) => c.timestamp + 60 * 1000 <= evalTimestamp);
+    if (history1m.length >= 30) {
+      try {
+        const brainRes = discoverGbv5Candidates({
+          asset: 'XAU/USD',
+          currentPrice,
+          balance: runningBalance,
+          candles1m: history1m,
+          candles5m: history5m,
+          candles15m: history15m,
+          candles1h: history1h,
+          indicators5m: ind5m,
+          indicators15m: ind15m,
+          indicators1h: ind1h,
+          brokerSpecs: {
+            accountBalance: runningBalance,
+            riskPercent: baseRiskPercent,
+            contractSizeOz: 100,
+            minimumLot: 0.01,
+            maximumLot: 100,
+            lotStep: 0.01,
+            minGoldSlPoints: minSlConfigured,
+            maxGoldSlPoints: maxSlConfigured,
+            minRr: request.brokerSpecs?.minRr ?? 1.5,
+            maxLoss: request.brokerSpecs?.maxLoss ?? 5.5,
+          },
+          minConfidence: 75,
+        });
+
+        if (brainRes.candidates.length > 0) {
+          const topCand = brainRes.candidates[0];
+          candidateSignal = {
+            decision: topCand.direction === 'BUY'
+              ? (topCand.orderType === 'LIMIT' ? 'BUY LIMIT' : 'BUY NOW')
+              : (topCand.orderType === 'LIMIT' ? 'SELL LIMIT' : 'SELL NOW'),
+            entry: topCand.entry,
+            stopLoss: topCand.stopLoss,
+            tp1: topCand.tp1,
+            tp2: topCand.tp2,
+            confidence: topCand.confidence,
+            setup: `GB-V5 [${topCand.family}] ${topCand.setupName}`,
+            realRR: topCand.tp1Rr,
+            tp2Rr: topCand.tp2Rr,
+            tpSelectionReason: topCand.mainReasons.join('; '),
+            structuralTargetUsed: topCand.supportingConfluences.join('; ') || 'Structural Target',
+            atrAtEntry: atr5m,
+            passedVolatilitySanity: true,
+            rawStructuralTarget: topCand.tp1,
+            targetSourceType: 'CANONICAL_FAMILY',
+            isModified: false,
+            modificationReason: '',
+          };
+        }
+      } catch (bErr) {
+        // Fallback to structural setups
+      }
+    }
+
     // 1. Bullish Setup (BUY NOW)
-    if (is1hBullish && (ind15m.premiumDiscountZone === 'DISCOUNT' || currentPrice <= ind5m.ema50 + atr5m) && bullishRejection) {
+    if (!candidateSignal && is1hBullish && (ind15m.premiumDiscountZone === 'DISCOUNT' || currentPrice <= ind5m.ema50 + atr5m) && bullishRejection) {
       const entry = currentPrice;
       // Technical SL based on real invalidation: strictly 40 to 50 pip range
       const rawSlDist = entry - (Math.min(ind5m.swingLow, current5m.low) - atr5m * 0.3);
@@ -527,51 +593,57 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
     // If no valid signal, continue
     if (!candidateSignal) continue;
 
-    // FEATURE 2: TECHNICAL SL BUFFER
+    // FEATURE 2: TECHNICAL SL AND BUFFER
     const technicalSL = candidateSignal.stopLoss;
     const technicalSlDistance = Math.abs(candidateSignal.entry - technicalSL);
     const technicalSlPoints = Number((technicalSlDistance / 0.1).toFixed(1));
-    if (technicalSlPoints < 40 || technicalSlPoints > 50) {
+
+    if (technicalSlPoints < minSlConfigured || technicalSlPoints > maxSlConfigured) {
       continue;
     }
 
-    const isBuySignal = candidateSignal.decision.includes('BUY');
-    const bufferRaw = Number((atr5m * 0.15).toFixed(2));
-    const slBuffer = Number(Math.min(1.5, Math.max(0.2, bufferRaw)).toFixed(2));
-    const finalSL = isBuySignal
-      ? Number((technicalSL - slBuffer).toFixed(2))
-      : Number((technicalSL + slBuffer).toFixed(2));
+    if (candidateSignal.targetSourceType === 'CANONICAL_FAMILY') {
+      candidateSignal.technicalSL = technicalSL;
+      candidateSignal.slBuffer = 0;
+    } else {
+      const isBuySignal = candidateSignal.decision.includes('BUY');
+      const bufferRaw = Number((atr5m * 0.15).toFixed(2));
+      const slBuffer = Number(Math.min(1.5, Math.max(0.2, bufferRaw)).toFixed(2));
+      const finalSL = isBuySignal
+        ? Number((technicalSL - slBuffer).toFixed(2))
+        : Number((technicalSL + slBuffer).toFixed(2));
 
-    // Recalculate dynamic TP / RR validity using finalSL
-    const bufferedDynamicTp = calculateDynamicTakeProfits({
-      direction: isBuySignal ? 'BUY' : 'SELL',
-      entry: candidateSignal.entry,
-      stopLoss: finalSL,
-      asset: 'XAU/USD',
-      indicators1h: ind1h,
-      indicators15m: ind15m,
-      indicators5m: ind5m,
-      candles1h: history1h,
-      candles15m: history15m,
-      candles5m: history5m,
-    });
+      // Recalculate dynamic TP / RR validity using finalSL
+      const bufferedDynamicTp = calculateDynamicTakeProfits({
+        direction: isBuySignal ? 'BUY' : 'SELL',
+        entry: candidateSignal.entry,
+        stopLoss: finalSL,
+        asset: 'XAU/USD',
+        indicators1h: ind1h,
+        indicators15m: ind15m,
+        indicators5m: ind5m,
+        candles1h: history1h,
+        candles15m: history15m,
+        candles5m: history5m,
+      });
 
-    if (!bufferedDynamicTp.valid) {
-      noTradeCountSub2RR += 1;
-      continue;
-    }
+      if (!bufferedDynamicTp.valid) {
+        noTradeCountSub2RR += 1;
+        continue;
+      }
 
-    // Apply buffered SL and re-computed TPs to candidateSignal
-    candidateSignal.technicalSL = technicalSL;
-    candidateSignal.slBuffer = slBuffer;
-    candidateSignal.stopLoss = finalSL;
-    candidateSignal.tp1 = bufferedDynamicTp.tp1;
-    candidateSignal.tp2 = bufferedDynamicTp.tp2;
-    candidateSignal.realRR = bufferedDynamicTp.tp1Rr;
-    candidateSignal.tp2Rr = bufferedDynamicTp.tp2Rr;
+      // Apply buffered SL and re-computed TPs to candidateSignal
+      candidateSignal.technicalSL = technicalSL;
+      candidateSignal.slBuffer = slBuffer;
+      candidateSignal.stopLoss = finalSL;
+      candidateSignal.tp1 = bufferedDynamicTp.tp1;
+      candidateSignal.tp2 = bufferedDynamicTp.tp2;
+      candidateSignal.realRR = bufferedDynamicTp.tp1Rr;
+      candidateSignal.tp2Rr = bufferedDynamicTp.tp2Rr;
 
-    if (slBuffer > maxBufferUsed) {
-      maxBufferUsed = slBuffer;
+      if (slBuffer > maxBufferUsed) {
+        maxBufferUsed = slBuffer;
+      }
     }
 
     // Apply strict Risk Manager
@@ -591,9 +663,10 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
         minimumLot: 0.01,
         maximumLot: 100,
         lotStep: 0.01,
-        minGoldSlPoints: 40,
-        maxGoldSlPoints: 50 + Math.ceil(slBuffer / 0.1),
-        minRr: 1.5,
+        minGoldSlPoints: minSlConfigured,
+        maxGoldSlPoints: maxSlConfigured,
+        minRr: request.brokerSpecs?.minRr ?? 1.5,
+        maxLoss: request.brokerSpecs?.maxLoss ?? 5.5,
       },
     });
 
@@ -994,6 +1067,7 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
     dailyTradesDistribution: dailyTradeCounts,
     timeRange,
     candlesEvaluated: activeCandles5m.length,
+    candlesCount1m: candles1m.length,
     candlesCount1h: activeCandles1h.length,
     candlesCount15m: activeCandles15m.length,
     candlesCount5m: activeCandles5m.length,

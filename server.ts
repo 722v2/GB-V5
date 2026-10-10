@@ -29,11 +29,16 @@ async function startServer() {
 
   app.use(express.json());
 
-  // Health check endpoint (Requirement 9)
+  // Health check endpoint (Requirement 9 & Pre-Deployment Audit)
   app.get('/api/health', (req, res) => {
     const report = scanner.getHealthReport();
+    const storageStats = storage.getStats();
+    const hasBridgeToken = !!((process.env.MT5_BRIDGE_TOKEN || process.env.MT5_API_KEY || '').trim());
+    const isPersistenceDurable = !!storageStats.durablePersistence;
+    const isDegraded = !hasBridgeToken || !isPersistenceDurable;
+
     res.json({
-      status: 'ok',
+      status: isDegraded ? 'degraded' : 'ok',
       scannerStatus: report.scannerStatus, // 'ONLINE' | 'OFFLINE'
       lastScanTime: report.lastScanTime,
       lastScanTimeFormatted: report.lastScanTimeFormatted,
@@ -54,12 +59,24 @@ async function startServer() {
       isScanning: report.isScanning,
       service: 'Gold AI Challenge 24/7 Scanner Worker',
       marketProvider: 'Biquote (XAUUSD MT5 Feed)',
-      storage: storage.getStats(),
+      storage: storageStats,
+      bridgeSecurity: {
+        tokenConfigured: hasBridgeToken,
+        status: hasBridgeToken ? 'CONFIGURED' : 'UNCONFIGURED_MISSING_TOKEN',
+        warning: hasBridgeToken ? undefined : 'DEPLOYMENT REQUIREMENT: Set MT5_BRIDGE_TOKEN in the environment to authorize the Windows MT5 client.',
+      },
+      scannerRuntime: {
+        triggerMode: scanner.getTriggerMode(),
+        internalTimerActive: scanner.isInternalTimerActive(),
+        intervalSeconds: scanner.getConfig().intervalSeconds,
+      },
       environment: {
         runtime: 'Node.js Autonomous Background Worker',
+        host: '0.0.0.0',
+        port: PORT,
         cronWebhookUrl: '/api/scanner/cron-tick',
         standaloneCommand: 'npm run worker',
-        cloudRunScaleToZeroNote: 'Cloud Run serverless containers enter low-power sleep if idle with 0 active HTTP requests. To guarantee 100% 24/7 uptime when offline, connect a free cron pinger (e.g. cron-job.org / Cloud Scheduler) to ping /api/scanner/cron-tick every 60s, or run npm run worker on any VPS.',
+        cloudRunScaleToZeroNote: 'Render Free instances sleep after 15m inactivity. Incoming MT5 heartbeats or an external cron pinger (e.g. cron-job.org pinging /api/scanner/cron-tick every 60s) keep it active.',
       },
       time: new Date().toISOString(),
       timestamp: Date.now(),
@@ -182,16 +199,33 @@ async function startServer() {
 
       // Gather multi-timeframe live market data
       const marketData = await getMultiTimeframeData(asset);
-      const quoteTime = typeof marketData.quote?.timestamp === 'number' ? marketData.quote.timestamp : Date.now();
-      const closedH1 = partition1hCandles(marketData.candles1h, quoteTime).closedCandles;
-      const closedM15 = partition15mCandles(marketData.candles15m, quoteTime).closedCandles;
-      const closedM5 = partition5mCandles(marketData.candles5m, quoteTime).closedCandles;
-      const closedM1 = partition1mCandles(marketData.candles1m, quoteTime).closedCandles;
+      const rawTs = marketData.quote?.timestamp;
+      const quoteTime = typeof rawTs === 'number'
+        ? rawTs
+        : typeof rawTs === 'string'
+        ? new Date(rawTs).getTime()
+        : rawTs instanceof Date
+        ? rawTs.getTime()
+        : Date.now();
 
-      const validClosedH1 = closedH1.length > 0 ? closedH1 : marketData.candles1h;
-      const validClosedM15 = closedM15.length > 0 ? closedM15 : marketData.candles15m;
-      const validClosedM5 = closedM5.length > 0 ? closedM5 : marketData.candles5m;
-      const validClosedM1 = closedM1.length > 0 ? closedM1 : marketData.candles1m;
+      const part1h = partition1hCandles(marketData.candles1h, quoteTime);
+      const part15m = partition15mCandles(marketData.candles15m, quoteTime);
+      const part5m = partition5mCandles(marketData.candles5m, quoteTime);
+      const part1m = partition1mCandles(marketData.candles1m, quoteTime);
+
+      if (!part1h.isValid || !part15m.isValid || !part5m.isValid || !part1m.isValid ||
+          part1h.closedCandles.length === 0 || part15m.closedCandles.length === 0 ||
+          part5m.closedCandles.length === 0 || part1m.closedCandles.length === 0) {
+        return res.json({
+          success: false,
+          error: 'DATA_INTEGRITY_FAIL: Market data partitioning validation failed (closed candles required)',
+        });
+      }
+
+      const validClosedH1 = part1h.closedCandles;
+      const validClosedM15 = part15m.closedCandles;
+      const validClosedM5 = part5m.closedCandles;
+      const validClosedM1 = part1m.closedCandles;
 
       // Run technical & market structure analysis
       const ind1h = analyzeTechnicals(validClosedH1);
@@ -458,20 +492,186 @@ async function startServer() {
     }
   });
 
-  // MT5 Account info endpoint
+  // MT5 Bridge Authentication Middleware
+  const verifyBridgeToken = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const configuredToken = (process.env.MT5_BRIDGE_TOKEN || process.env.MT5_API_KEY || '').trim();
+    if (!configuredToken) {
+      return res.status(503).json({
+        success: false,
+        error: 'MT5 bridge is not configured: MT5_BRIDGE_TOKEN is required in the environment before bridge endpoints can be accessed.',
+      });
+    }
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+    if (!token || token !== configuredToken) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Invalid or missing MT5 bridge token' });
+    }
+    next();
+  };
+
+  // =========================================================================
+  // Windows MT5 Bridge Outbound Agent Endpoints
+  // =========================================================================
+
+  // Inbound heartbeat from Windows MT5 Bridge Client
+  app.post('/api/mt5/bridge/heartbeat', verifyBridgeToken, (req, res) => {
+    try {
+      const result = mt5Bridge.handleBridgeHeartbeat(req.body);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Windows Bridge polls for pending commands to execute on MT5
+  app.get('/api/mt5/bridge/commands/poll', verifyBridgeToken, (req, res) => {
+    try {
+      const commands = mt5Bridge.pollPendingCommands();
+      res.json({ success: true, count: commands.length, commands });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Windows Bridge reports command execution results
+  app.post('/api/mt5/bridge/commands/:commandId/result', verifyBridgeToken, (req, res) => {
+    try {
+      const { commandId } = req.params;
+      const result = mt5Bridge.handleCommandResult(commandId, req.body);
+      
+      // If filled, save to ledger
+      if (req.body.status === 'FILLED') {
+        const cmdStatus = mt5Bridge.getStatus();
+        const cmd = cmdStatus.commands.recent.find((c) => c.commandId === commandId);
+        if (cmd) {
+          const tradeItem: any = {
+            id: `mt5_${req.body.positionTicket || req.body.orderTicket || Date.now()}`,
+            tradeNumber: (storage.getTrades(1)[0]?.tradeNumber || 0) + 1,
+            date: new Date().toLocaleDateString('ar-EG', {
+              month: 'short',
+              day: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            }),
+            isoTime: new Date().toISOString(),
+            asset: 'XAU/USD',
+            direction: cmd.action,
+            entry: req.body.executionPrice || cmd.price,
+            sl: cmd.sl,
+            slPoints: Math.round(Math.abs((req.body.executionPrice || cmd.price || 0) - cmd.sl) / 0.1),
+            tp1: cmd.tp,
+            tp1Points: Math.round(Math.abs(cmd.tp - (req.body.executionPrice || cmd.price || 0)) / 0.1),
+            tp2: cmd.tp2,
+            tp2Points: cmd.tp2 ? Math.round(Math.abs(cmd.tp2 - (req.body.executionPrice || cmd.price || 0)) / 0.1) : undefined,
+            rr: '1:2.0',
+            riskPercent: 1.5,
+            riskAmount: 1.5,
+            lotSize: cmd.volume,
+            confidence: 85,
+            setup: 'GB-V5 Demo Execution',
+            result: 'OPEN',
+            balanceAfterTrade: storage.getSettings().manualCapital,
+            notes: `Executed via Windows MT5 Demo Bridge [Ticket #${req.body.positionTicket || req.body.orderTicket}]`,
+          };
+          storage.saveTrade(tradeItem);
+        }
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Windows Bridge pushes historical candles for backtesting
+  app.post('/api/mt5/bridge/historical-candles', verifyBridgeToken, (req, res) => {
+    try {
+      const { timeframe, candles } = req.body;
+      if (!timeframe || !Array.isArray(candles)) {
+        return res.status(400).json({ success: false, error: 'timeframe and candles array required' });
+      }
+      mt5Bridge.storeHistoricalCandles(timeframe, candles);
+      res.json({ success: true, count: candles.length });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // Windows Bridge reports confirmed deals from MT5 for ledger reconciliation
+  app.post('/api/mt5/bridge/deals', verifyBridgeToken, (req, res) => {
+    try {
+      const { deals } = req.body;
+      if (!Array.isArray(deals)) {
+        return res.status(400).json({ success: false, error: 'deals array required' });
+      }
+      const result = mt5Bridge.handleDealsReport(deals);
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // =========================================================================
+  // User & Dashboard MT5 Control Endpoints
+  // =========================================================================
+
+  // Comprehensive MT5 Status (Account, Safety, Limits, Positions, Commands)
+  app.get('/api/mt5/status', (req, res) => {
+    res.json(mt5Bridge.getStatus());
+  });
+
+  // Enable Demo Auto-Trading (Strict user action required)
+  app.post('/api/mt5/auto-trading/enable', (req, res) => {
+    const result = mt5Bridge.enableDemoAutoTrading();
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.reason });
+    }
+    // Also update settings in storage
+    storage.saveSettings({ autoTradingEnabled: true, executionMode: 'DEMO', accountMode: 'DEMO' });
+    res.json({ success: true, message: 'تم تفعيل التداول التجريبي التلقائي (Demo Auto-Trading) بنجاح.' });
+  });
+
+  // Disable Demo Auto-Trading
+  app.post('/api/mt5/auto-trading/disable', (req, res) => {
+    mt5Bridge.disableDemoAutoTrading();
+    storage.saveSettings({ autoTradingEnabled: false });
+    res.json({ success: true, message: 'تم إيقاف التداول التجريبي التلقائي.' });
+  });
+
+  // Emergency Kill-Switch
+  app.post('/api/mt5/kill-switch', (req, res) => {
+    const { reason } = req.body || {};
+    mt5Bridge.activateKillSwitch(reason || 'Manual Emergency Trigger');
+    storage.saveSettings({ autoTradingEnabled: false });
+    res.json({ success: true, message: 'تم تفعيل زر الطوارئ (Kill Switch) وإيقاف جميع الأوامر فوراً.' });
+  });
+
+  // Reset Kill-Switch
+  app.post('/api/mt5/kill-switch/reset', (req, res) => {
+    mt5Bridge.resetKillSwitch();
+    res.json({ success: true, message: 'تمت إعادة ضبط زر الطوارئ (يبقى التداول معطلاً لحين التفعيل اليدوي الصريح).' });
+  });
+
+  // Open Positions
+  app.get('/api/mt5/positions', (req, res) => {
+    res.json({
+      success: true,
+      allPositions: mt5Bridge.getAllPositions(),
+      botManagedPositions: mt5Bridge.getBotManagedPositions(),
+    });
+  });
+
+  // MT5 Account info endpoint (Compatibility)
   app.get('/api/mt5/account', async (req, res) => {
     try {
       const account = await mt5Bridge.getAccountStatus();
-      const settings = storage.getSettings();
-      // Ensure accountMode in response reflects saved user settings
-      account.accountMode = settings.accountMode || 'DEMO';
       res.json({ success: true, account });
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
     }
   });
 
-  // MT5 Order Execution Endpoint (Requirement: Bridge execution for DEMO and REAL)
+  // MT5 Order Queue Endpoint
   app.post('/api/mt5/order', async (req, res) => {
     try {
       const {
@@ -484,53 +684,8 @@ async function startServer() {
         takeProfit,
         takeProfit2,
         comment,
-        confidence = 75,
-        riskPercent = 15,
-        riskAmount = 1.5,
-        setup = 'ICT SMC Engine',
-        rr = '1:2.0',
       } = req.body;
 
-      const settings = storage.getSettings();
-      const accountMode = settings.accountMode || 'DEMO';
-
-      // 1. Mandatory Risk Guard and Daily Limits Check
-      const todayStats = storage.getTodayStats();
-      if (todayStats.tradesCount >= 3) {
-        return res.status(400).json({
-          success: false,
-          error: 'تم تجاوز الحد الأقصى للصفقات اليومية (3 صفقات يومياً) - حماية رأس المال مفعّلة.',
-        });
-      }
-
-      const orderRiskPct = Number(riskPercent) || 15;
-      if (orderRiskPct > 15.0) {
-        return res.status(400).json({
-          success: false,
-          error: `تم حظر الأمر: نسبة المخاطرة المطلوبة (${orderRiskPct}%) تتجاوز الحد الأقصى المسموح (15%).`,
-        });
-      }
-
-      if (todayStats.totalRiskPercentUsed + orderRiskPct > 30.0) {
-        return res.status(400).json({
-          success: false,
-          error: `تم تجاوز الحد الأقصى للمخاطرة اليومية (30%). المخاطرة المستخدمة اليوم: ${todayStats.totalRiskPercentUsed}%`,
-        });
-      }
-
-      // 2. Validate Stop Loss Points
-      const entry = Number(entryPrice);
-      const sl = Number(stopLoss);
-      const slDistance = Math.abs(entry - sl);
-      const slPoints = Math.round(slDistance / 0.1);
-      if (slPoints > (settings.maxGoldSlPoints || 100)) {
-        return res.status(400).json({
-          success: false,
-          error: `تم حظر الأمر: مسافة وقف الخسارة (${slPoints} نقطة) تتجاوز الحد الأقصى (${settings.maxGoldSlPoints || 100} نقطة).`,
-        });
-      }
-
-      // Map action
       let resolvedAction: 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT' = 'BUY';
       const dirStr = String(action || signal || '').toUpperCase();
       if (dirStr.includes('BUY LIMIT')) resolvedAction = 'BUY_LIMIT';
@@ -538,72 +693,27 @@ async function startServer() {
       else if (dirStr.includes('SELL')) resolvedAction = 'SELL';
       else resolvedAction = 'BUY';
 
-      // 3. Execute through MT5 Bridge
-      const bridgeResponse = await mt5Bridge.executeOrder({
-        symbol: symbol.replace('/', ''),
+      const queueRes = mt5Bridge.queueDemoOrder({
         action: resolvedAction,
-        lot: Number(lot) || 0.01,
-        price: entry,
-        stopLoss: sl,
-        takeProfit: Number(takeProfit),
-        takeProfit2: takeProfit2 ? Number(takeProfit2) : undefined,
-        comment: comment || `Gold AI ${accountMode}`,
-        accountMode: accountMode,
+        symbol: symbol.replace('/', ''),
+        volume: Number(lot) || 0.01,
+        price: Number(entryPrice),
+        sl: Number(stopLoss),
+        tp: Number(takeProfit),
+        tp2: takeProfit2 ? Number(takeProfit2) : undefined,
+        comment: comment || 'GB-V5 Manual Demo Trade',
       });
 
-      if (!bridgeResponse.success && accountMode === 'REAL') {
-        return res.status(400).json({
-          success: false,
-          error: bridgeResponse.message || 'فشل تنفيذ الأمر على منصة MT5 بالحساب الحقيقي.',
-        });
+      if (!queueRes.success) {
+        return res.status(400).json({ success: false, error: queueRes.reason });
       }
-
-      // 4. Save executed trade to Ledger
-      const newTradeId = bridgeResponse.orderId || `trade_${Date.now()}`;
-      const effectiveEntry = bridgeResponse.executionPrice || entry;
-      const tradeItem: any = {
-        id: newTradeId,
-        tradeNumber: (storage.getTrades(1)[0]?.tradeNumber || 0) + 1,
-        date: new Date().toLocaleDateString('ar-EG', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        isoTime: new Date().toISOString(),
-        asset: 'XAU/USD',
-        direction: dirStr as any,
-        entry: effectiveEntry,
-        sl: sl,
-        slPoints: slPoints,
-        tp1: Number(takeProfit),
-        tp1Points: Math.round(Math.abs(Number(takeProfit) - effectiveEntry) / 0.1),
-        tp2: takeProfit2 ? Number(takeProfit2) : Number(takeProfit) * 1.02,
-        tp2Points: takeProfit2 ? Math.round(Math.abs(Number(takeProfit2) - effectiveEntry) / 0.1) : undefined,
-        rr: rr,
-        riskPercent: orderRiskPct,
-        riskAmount: Number(riskAmount) || 1.5,
-        lotSize: Number(lot) || 0.01,
-        confidence: Number(confidence) || 75,
-        setup: setup,
-        result: 'OPEN',
-        balanceAfterTrade: storage.getSettings().manualCapital,
-        notes: `Executed via MT5 Bridge [Mode: ${accountMode}] - Status: ${bridgeResponse.status} ${bridgeResponse.ticket ? `(Ticket #${bridgeResponse.ticket})` : ''}`,
-      };
-
-      const updatedTrades = storage.saveTrade(tradeItem);
-      const updatedDailyStats = storage.getTodayStats();
 
       res.json({
         success: true,
-        bridgeResponse,
-        trade: tradeItem,
-        trades: updatedTrades,
-        dailyStats: updatedDailyStats,
-        message: bridgeResponse.message,
+        commandId: queueRes.commandId,
+        message: 'تم إدراج الأمر في قائمة انتظار التنفيذ التجريبي لـ MT5 بنجاح.',
       });
     } catch (error: any) {
-      console.error('Error executing MT5 order:', error);
       res.status(500).json({ success: false, error: error.message });
     }
   });

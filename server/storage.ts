@@ -308,6 +308,10 @@ export class PersistentStorage {
         const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
         const data = JSON.parse(raw);
         this.inMemorySettings = { ...this.inMemorySettings, ...data };
+        if (this.inMemorySettings.minGoldSlPoints === 40 && this.inMemorySettings.maxGoldSlPoints === 50) {
+          this.inMemorySettings.minGoldSlPoints = 35;
+          this.inMemorySettings.maxGoldSlPoints = 85;
+        }
       }
 
       if (fs.existsSync(TEST_TRADES_FILE)) {
@@ -1683,6 +1687,7 @@ export class PersistentStorage {
     signalOrTradeId: string;
     brokerDealId: string;
     brokerOrderId?: string;
+    positionTicket?: number;
     entryPrice?: number;
     exitPrice: number;
     lotSize?: number;
@@ -1690,18 +1695,91 @@ export class PersistentStorage {
     closedAt?: number;
     closeReason?: string;
     direction?: string;
+    commission?: number;
+    swap?: number;
   }): { success: boolean; trade?: TradeLedgerItem; message?: string } {
     try {
+      // 1. Idempotency Check: Don't process the same deal twice
+      if (params.brokerDealId) {
+        const alreadyRecorded = this.inMemoryOutcomes.find(
+          (o) => o.brokerDealId === params.brokerDealId
+        );
+        if (alreadyRecorded) {
+          const existingTrade = this.inMemoryTrades.find((t) => t.id === alreadyRecorded.tradeId || t.id === params.signalOrTradeId);
+          return { success: true, trade: existingTrade, message: 'DEAL_ALREADY_RECONCILED' };
+        }
+      }
+
+      // 2. Locate referenced trade in ledger
+      let tradeToUpdate = this.inMemoryTrades.find((t) =>
+        t.id === params.signalOrTradeId ||
+        (params.positionTicket && (t.id === `mt5_${params.positionTicket}` || t.notes?.includes(String(params.positionTicket)))) ||
+        (params.brokerOrderId && (t.id === `mt5_${params.brokerOrderId}` || t.notes?.includes(String(params.brokerOrderId)))) ||
+        (t.notes && t.notes.includes(`Deal #${params.brokerDealId}`))
+      );
+
       const outcome: 'WIN' | 'LOSS' = params.realizedPnl >= 0 ? 'WIN' : 'LOSS';
+
+      if (tradeToUpdate) {
+        tradeToUpdate.result = outcome;
+        tradeToUpdate.pl = params.realizedPnl;
+        tradeToUpdate.exitPrice = params.exitPrice;
+        tradeToUpdate.isActive = false;
+        tradeToUpdate.closeReason = params.closeReason || 'MT5_CLOSED';
+        tradeToUpdate.notes = (tradeToUpdate.notes ? `${tradeToUpdate.notes} | ` : '') + `Closed via Deal #${params.brokerDealId} (PnL: $${params.realizedPnl.toFixed(2)})`;
+      } else {
+        // Instantiate missing trade in ledger (e.g. executed before restart or directly on MT5 demo)
+        const highestNum = Math.max(0, ...this.inMemoryTrades.map((t) => t.tradeNumber || 0));
+        const entryPrice = params.entryPrice || params.exitPrice;
+        tradeToUpdate = {
+          id: params.signalOrTradeId || `mt5_${params.brokerDealId}`,
+          signalId: params.signalOrTradeId,
+          tradeNumber: highestNum + 1,
+          date: new Date(params.closedAt || Date.now()).toLocaleDateString('ar-EG', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          isoTime: new Date(params.closedAt || Date.now()).toISOString(),
+          asset: 'XAU/USD',
+          direction: (params.direction as any) || 'BUY',
+          entry: entryPrice,
+          sl: 0,
+          slPoints: 0,
+          tp1: 0,
+          tp1Points: 0,
+          lotSize: params.lotSize || 0.01,
+          riskPercent: 1.5,
+          riskAmount: 1.5,
+          confidence: 85,
+          setup: 'MT5 Executed Trade',
+          rr: '1:1.5',
+          result: outcome,
+          pl: params.realizedPnl,
+          exitPrice: params.exitPrice,
+          balanceAfterTrade: Number(((this.inMemoryCurrentBalance || 25) + params.realizedPnl).toFixed(2)),
+          isActive: false,
+          source: 'MT5' as any,
+          notes: `Reconciled from MT5 Deal #${params.brokerDealId}`,
+        };
+        this.inMemoryTrades.unshift(tradeToUpdate);
+      }
+
+      // 3. Update Balance
+      this.inMemoryCurrentBalance = Number(((this.inMemoryCurrentBalance || 25) + params.realizedPnl).toFixed(2));
+      tradeToUpdate.balanceAfterTrade = this.inMemoryCurrentBalance;
+
+      // 4. Record Trade Outcome Record
       const record: TradeOutcomeRecord = {
-        signalId: params.signalOrTradeId,
-        tradeId: params.signalOrTradeId,
-        direction: params.direction || (params.entryPrice && params.exitPrice && params.exitPrice > params.entryPrice ? 'BUY NOW' : 'SELL NOW'),
+        signalId: tradeToUpdate.signalId || tradeToUpdate.id,
+        tradeId: tradeToUpdate.id,
+        direction: tradeToUpdate.direction,
         orderType: 'MARKET',
-        entry: params.entryPrice || 0,
-        stopLoss: 0,
-        tp1: 0,
-        tp2: 0,
+        entry: tradeToUpdate.entry,
+        stopLoss: tradeToUpdate.sl,
+        tp1: tradeToUpdate.tp1,
+        tp2: tradeToUpdate.tp2,
         outcome,
         realizedPnl: params.realizedPnl,
         exitPrice: params.exitPrice,
@@ -1712,12 +1790,48 @@ export class PersistentStorage {
         closeReason: params.closeReason || 'MT5_CLOSED',
         timestamp: params.closedAt || Date.now(),
         isoTime: new Date(params.closedAt || Date.now()).toISOString(),
+        notes: `Commission: $${(params.commission || 0).toFixed(2)}, Swap: $${(params.swap || 0).toFixed(2)}`,
       };
-      const res = this.recordTradeOutcome(record);
+
+      this.inMemoryOutcomes.unshift(record);
+      if (this.inMemoryOutcomes.length > 500) {
+        this.inMemoryOutcomes = this.inMemoryOutcomes.slice(0, 500);
+      }
+
+      // 5. Persist to Supabase and JSON backups
+      this.safeSupabase(
+        (c) => c.from('trade_outcomes').upsert(this.formatOutcomeRow(record)),
+        'reconcileMt5Trade:outcomes'
+      );
+      this.safeSupabase(
+        (c) => c.from('trade_ledger').upsert(this.formatTradeRow(tradeToUpdate!)),
+        'reconcileMt5Trade:ledger'
+      );
+      this.safeSupabase(
+        (c) =>
+          c.from('account_state').upsert({
+            id: 'main',
+            current_balance: this.inMemoryCurrentBalance,
+            starting_balance: this.inMemoryStartingBalance,
+            updated_at: new Date().toISOString(),
+          }),
+        'reconcileMt5Trade:account_state'
+      );
+      this.syncJsonBackups();
+
+      // 6. Notify registered outcome listeners
+      for (const listener of this.outcomeListeners) {
+        try {
+          listener(record, tradeToUpdate);
+        } catch (lErr) {
+          console.warn('[Storage] Outcome listener error (non-blocking):', lErr);
+        }
+      }
+
       return {
-        success: res.success,
-        trade: res.trade,
-        message: res.message,
+        success: true,
+        trade: tradeToUpdate,
+        message: 'RECONCILED',
       };
     } catch (e: any) {
       console.error('[Storage] reconcileMt5Trade error:', e);
@@ -2137,12 +2251,23 @@ export class PersistentStorage {
   }
 
   public getStats() {
+    const supabaseConfigured = isSupabaseConfigured();
+    const supabaseAvailable = isSupabaseAvailable();
     return {
       totalScansRecorded: this.inMemoryScans.length,
       totalSignalsRecorded: this.inMemorySignals.length,
       totalTradesRecorded: this.inMemoryTrades.length,
       totalOutcomesRecorded: this.inMemoryOutcomes.length,
-      storageEngine: isSupabaseConfigured() ? 'Supabase PostgreSQL (Durable Cloud Storage)' : 'Local Disk Backup (Supabase Config Pending)',
+      storageEngine: supabaseConfigured ? 'Supabase PostgreSQL (Durable Cloud Storage)' : 'Ephemeral Local Disk Backup',
+      durablePersistence: supabaseConfigured && supabaseAvailable,
+      supabaseStatus: !supabaseConfigured
+        ? 'UNCONFIGURED'
+        : supabaseAvailable
+        ? 'CONNECTED'
+        : 'DEGRADED_BACKOFF',
+      persistenceWarning: !supabaseConfigured
+        ? 'DEPLOYMENT BLOCKER: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not configured. On Render Free, container disk is ephemeral and state will reset on restart/sleep.'
+        : undefined,
       isInitialized: this.isReady,
     };
   }

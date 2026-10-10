@@ -5,6 +5,9 @@ import { calculateDynamicTakeProfits } from './tpEngine.js';
 import { generateMultiStrategyCandidates, SetupCandidate } from './strategyEngine.js';
 import { experienceMemoryEngine } from './experienceMemory.js';
 import { partition1hCandles, partition15mCandles, partition5mCandles, partition1mCandles } from './candleUtils.js';
+import { globalAiAdapter } from './aiAdapter.js';
+import { storage } from './storage.js';
+import { discoverGbv5Candidates } from './gbv5Brain.js';
 
 export const XAUUSD_TRADE_SIGNAL_JSON_SCHEMA = {
   type: 'object',

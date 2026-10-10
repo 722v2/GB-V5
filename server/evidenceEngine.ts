@@ -1,4 +1,5 @@
 import { Candle, TechnicalIndicators } from '../src/types.js';
+import { calculateATR } from './indicators.js';
 
 // ============================================================================
 // GB-V5 EVIDENCE ENGINE
@@ -143,7 +144,7 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
   const upperWickPct = upperWick / range;
   const lowerWickPct = lowerWick / range;
   const bodyRatio = body / range;
-  const bodyAtr = atr > 0 ? body / atr : 0.5;
+  const bodyAtr = atr > 0 ? body / atr : 0;
   const closeLoc = ((last.close - last.low) / range) * 100;
 
   const hasLowerRejection = lowerWickPct >= 0.35 || (last.close > last.open && lowerWickPct >= 0.25);
@@ -155,8 +156,8 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
   const isEngulfingBull = isBull && !prevBull && last.close > prev.high && last.open <= prev.close;
   const isEngulfingBear = !isBull && prevBull && last.close < prev.low && last.open >= prev.close;
 
-  const hasDisplacement = range >= atr * 1.2 && bodyRatio >= 0.6;
-  const isStrong = bodyRatio >= 0.55 && bodyAtr >= 0.7;
+  const hasDisplacement = atr > 0 && range >= atr * 1.2 && bodyRatio >= 0.6;
+  const isStrong = bodyRatio >= 0.55 && (atr > 0 ? bodyAtr >= 0.7 : bodyRatio >= 0.7);
 
   // Relationship to previous
   let rel: PriceActionEvidence['relationshipToPrevious'] = 'NEUTRAL';
@@ -174,15 +175,48 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
     else break;
   }
 
-  let qualityScore = 12;
-  if (hasLowerRejection || hasUpperRejection) qualityScore += 6;
-  if (isEngulfingBull || isEngulfingBear) qualityScore += 5;
-  if (hasDisplacement) qualityScore += 2;
+  // Directional rejection wick evaluation with ambiguous dual-wick symmetry
+  let rejectionDirection: PriceActionEvidence['rejectionDirection'] = 'NEUTRAL';
+  let hasRejectionWick = false;
+  let rejectionWickPercent = 0;
+
+  if (hasLowerRejection && hasUpperRejection) {
+    // Both upper and lower wicks exceed rejection thresholds (e.g. spinning top / doji)
+    // Require a clear 5% (0.05) dominance margin to avoid arbitrary bullish bias
+    if (lowerWickPct > upperWickPct + 0.05) {
+      rejectionDirection = 'BULLISH';
+      hasRejectionWick = true;
+      rejectionWickPercent = lowerWickPct;
+    } else if (upperWickPct > lowerWickPct + 0.05) {
+      rejectionDirection = 'BEARISH';
+      hasRejectionWick = true;
+      rejectionWickPercent = upperWickPct;
+    } else {
+      // Balanced / ambiguous dual-wick -> strictly NEUTRAL
+      rejectionDirection = 'NEUTRAL';
+      hasRejectionWick = false;
+      rejectionWickPercent = Math.max(lowerWickPct, upperWickPct);
+    }
+  } else if (hasLowerRejection) {
+    rejectionDirection = 'BULLISH';
+    hasRejectionWick = true;
+    rejectionWickPercent = lowerWickPct;
+  } else if (hasUpperRejection) {
+    rejectionDirection = 'BEARISH';
+    hasRejectionWick = true;
+    rejectionWickPercent = upperWickPct;
+  }
+
+  let qualityScore = 0;
+  if (hasRejectionWick) qualityScore += 10;
+  if (isEngulfingBull || isEngulfingBear) qualityScore += 7;
+  if (hasDisplacement) qualityScore += 5;
+  if (isStrong) qualityScore += 3;
 
   return {
-    hasRejectionWick: hasLowerRejection || hasUpperRejection,
-    rejectionWickPercent: hasLowerRejection ? lowerWickPct : upperWickPct,
-    rejectionDirection: hasLowerRejection ? 'BULLISH' : hasUpperRejection ? 'BEARISH' : 'NEUTRAL',
+    hasRejectionWick,
+    rejectionWickPercent,
+    rejectionDirection,
     isEngulfing: isEngulfingBull || isEngulfingBear,
     engulfingDirection: isEngulfingBull ? 'BULLISH' : isEngulfingBear ? 'BEARISH' : 'NONE',
     isStrongCandle: isStrong,
@@ -190,7 +224,7 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
     bodySizeRelativeAtr: Math.round(bodyAtr * 100) / 100,
     closeLocationPercent: Math.round(closeLoc),
     hasDisplacement,
-    displacementAtr: Math.round((range / Math.max(0.1, atr)) * 10) / 10,
+    displacementAtr: atr > 0 ? Math.round((range / atr) * 10) / 10 : 0,
     consecutiveMomentumCandles: streak,
     relationshipToPrevious: rel,
     rejectionQualityScore: Math.min(25, qualityScore),
@@ -217,32 +251,77 @@ export function extractMacdEvidence(ind: TechnicalIndicators): MacdEvidence {
     };
   }
 
-  const macdObj = ind.macd || { macd: 0, signal: 0, histogram: 0 };
-  const macdLine = Number((macdObj.macd ?? 0).toFixed(3));
-  const signalLine = Number((macdObj.signal ?? 0).toFixed(3));
-  const hist = Number((macdObj.histogram ?? (macdLine - signalLine)).toFixed(3));
-  const prevHist = hist * 0.9; // estimate if historical series not provided
+  const macdObj = ind.macd;
+  const rawMacd = macdObj.macd;
+  const rawSignal = macdObj.signal;
+  const isMacdValid = typeof rawMacd === 'number' && Number.isFinite(rawMacd);
+  const isSignalValid = typeof rawSignal === 'number' && Number.isFinite(rawSignal);
+
+  if (!isMacdValid || !isSignalValid) {
+    return {
+      macdLine: 0,
+      signalLine: 0,
+      histogram: 0,
+      prevHistogram: 0,
+      macdVsSignal: 'BELOW',
+      histogramDirection: 'CONTRACTING_NEGATIVE',
+      histogramAcceleration: 'STEADY',
+      zeroLinePosition: 'AT_ZERO',
+      zeroLineTransition: 'NONE',
+      recentCrossoverBarsAgo: 0,
+      momentumState: 'NEUTRAL',
+      evidenceScore: 0,
+      description: 'MACD: Data invalid or non-numeric',
+    };
+  }
+
+  const macdLine = Number(rawMacd.toFixed(3));
+  const signalLine = Number(rawSignal.toFixed(3));
+  const rawHist = typeof macdObj.histogram === 'number' && Number.isFinite(macdObj.histogram)
+    ? macdObj.histogram
+    : (rawMacd - rawSignal);
+  const hist = Number(rawHist.toFixed(3));
+  const prevHist = typeof macdObj.prevHistogram === 'number' && Number.isFinite(macdObj.prevHistogram)
+    ? Number(macdObj.prevHistogram.toFixed(3))
+    : hist;
 
   const isAboveSignal = macdLine > signalLine;
+  const isBelowSignal = macdLine < signalLine;
   const isAboveZero = macdLine > 0;
+  const isBelowZero = macdLine < 0;
   const isHistPositive = hist > 0;
+  const isHistNegative = hist < 0;
+  const isZeroOrFlat = Math.abs(macdLine) < 1e-4 && Math.abs(signalLine) < 1e-4 && Math.abs(hist) < 1e-4;
 
   let histDir: MacdEvidence['histogramDirection'] = 'EXPANDING_POSITIVE';
   if (isHistPositive) {
     histDir = hist >= prevHist ? 'EXPANDING_POSITIVE' : 'CONTRACTING_POSITIVE';
-  } else {
+  } else if (isHistNegative) {
     histDir = hist <= prevHist ? 'EXPANDING_NEGATIVE' : 'CONTRACTING_NEGATIVE';
+  } else {
+    histDir = 'CONTRACTING_POSITIVE';
   }
 
   let momentum: MacdEvidence['momentumState'] = 'NEUTRAL';
-  if (isAboveZero && isAboveSignal && isHistPositive) momentum = 'STRONG_BULLISH';
-  else if (isAboveSignal || isHistPositive) momentum = 'MODERATE_BULLISH';
-  else if (!isAboveZero && !isAboveSignal && !isHistPositive) momentum = 'STRONG_BEARISH';
-  else if (!isAboveSignal || !isHistPositive) momentum = 'MODERATE_BEARISH';
+  if (isZeroOrFlat) {
+    momentum = 'NEUTRAL';
+  } else if (isAboveZero && isAboveSignal && isHistPositive) {
+    momentum = 'STRONG_BULLISH';
+  } else if (isAboveSignal || isHistPositive) {
+    momentum = 'MODERATE_BULLISH';
+  } else if (isBelowZero && isBelowSignal && isHistNegative) {
+    momentum = 'STRONG_BEARISH';
+  } else if (isBelowSignal || isHistNegative) {
+    momentum = 'MODERATE_BEARISH';
+  }
 
-  let score = 8;
+  let score = 0;
   if (momentum === 'STRONG_BULLISH' || momentum === 'STRONG_BEARISH') score = 15;
-  else if (momentum === 'MODERATE_BULLISH' || momentum === 'MODERATE_BEARISH') score = 12;
+  else if (momentum === 'MODERATE_BULLISH' || momentum === 'MODERATE_BEARISH') score = 10;
+  else score = 0; // Genuinely neutral or flat MACD receives no directional bonus points
+
+  const recentCrossoverBarsAgo = typeof macdObj.recentCrossoverBarsAgo === 'number' ? macdObj.recentCrossoverBarsAgo : 0;
+  const zeroLineTransition = macdObj.zeroLineTransition || 'NONE';
 
   return {
     macdLine,
@@ -251,10 +330,10 @@ export function extractMacdEvidence(ind: TechnicalIndicators): MacdEvidence {
     prevHistogram: prevHist,
     macdVsSignal: isAboveSignal ? 'ABOVE' : 'BELOW',
     histogramDirection: histDir,
-    histogramAcceleration: Math.abs(hist) >= Math.abs(prevHist) ? 'ACCELERATING' : 'DECELERATING',
+    histogramAcceleration: Math.abs(hist) > Math.abs(prevHist) ? 'ACCELERATING' : Math.abs(hist) < Math.abs(prevHist) ? 'DECELERATING' : 'STEADY',
     zeroLinePosition: isAboveZero ? 'ABOVE_ZERO' : macdLine < 0 ? 'BELOW_ZERO' : 'AT_ZERO',
-    zeroLineTransition: 'NONE',
-    recentCrossoverBarsAgo: 2,
+    zeroLineTransition,
+    recentCrossoverBarsAgo,
     momentumState: momentum,
     evidenceScore: score,
     description: `MACD: ${momentum} (MACD: ${macdLine}, Sig: ${signalLine}, Hist: ${hist})`,
@@ -262,7 +341,13 @@ export function extractMacdEvidence(ind: TechnicalIndicators): MacdEvidence {
 }
 
 export function extractRsiEvidence(ind: TechnicalIndicators): RsiEvidence {
-  if (!ind || ind.isDataSufficient === false || typeof ind.rsi14 !== 'number') {
+  const rawRsi = typeof ind?.rsi14 === 'number' && Number.isFinite(ind.rsi14)
+    ? ind.rsi14
+    : typeof ind?.rsi === 'number' && Number.isFinite(ind.rsi)
+    ? ind.rsi
+    : undefined;
+
+  if (!ind || ind.isDataSufficient === false || rawRsi === undefined) {
     return {
       rsiValue: 50,
       momentumState: 'NEUTRAL',
@@ -274,7 +359,7 @@ export function extractRsiEvidence(ind: TechnicalIndicators): RsiEvidence {
     };
   }
 
-  const rsi = Number((ind.rsi14 ?? 50).toFixed(1));
+  const rsi = Number(rawRsi.toFixed(1));
   let state: RsiEvidence['momentumState'] = 'NEUTRAL';
   let isExhausted = false;
   let isOverextended = false;
@@ -293,9 +378,10 @@ export function extractRsiEvidence(ind: TechnicalIndicators): RsiEvidence {
     state = 'BEARISH_MOMENTUM';
   }
 
-  let score = 7;
-  if (state === 'BULLISH_MOMENTUM' || state === 'BEARISH_MOMENTUM') score = 9;
-  else if (isOverextended) score = 10;
+  let score = 0;
+  if (isOverextended) score = 10;
+  else if (state === 'BULLISH_MOMENTUM' || state === 'BEARISH_MOMENTUM') score = 8;
+  else score = 0; // Neutral RSI provides 0 directional momentum bonus points
 
   return {
     rsiValue: rsi,
@@ -335,16 +421,42 @@ export function extractStructureEvidence(
     };
   }
 
-  const swingH = ind15m.swingHigh || ind5m.swingHigh || currentPrice + atr * 2;
-  const swingL = ind15m.swingLow || ind5m.swingLow || currentPrice - atr * 2;
-  const trend = ind15m.structure || 'RANGING';
+  const swingH = ind15m?.swingHigh || ind5m?.swingHigh || currentPrice + (atr > 0 ? atr * 2 : 4);
+  const swingL = ind15m?.swingLow || ind5m?.swingLow || currentPrice - (atr > 0 ? atr * 2 : 4);
+  const trend = ind15m?.structure || ind5m?.structure || 'RANGING';
 
   const isBreakingHigh = currentPrice >= swingH - 0.2;
   const isBreakingLow = currentPrice <= swingL + 0.2;
 
-  let score = 18;
-  if (trend === 'BULLISH' || trend === 'BEARISH') score += 4;
-  if (isBreakingHigh || isBreakingLow) score += 3;
+  let score = 0;
+  if (trend === 'BULLISH' || trend === 'BEARISH') {
+    score += 14; // Valid directional market structure
+  }
+  if (isBreakingHigh || isBreakingLow) {
+    score += 6;
+  }
+  if (ind15m?.chochDetected) {
+    score += 3;
+  }
+  const isRetesting = atr > 0 && (Math.abs(currentPrice - swingH) <= atr * 0.8 || Math.abs(currentPrice - swingL) <= atr * 0.8);
+  if (isRetesting) {
+    score += 2;
+  }
+  // Order Block / POI retest
+  const ob = ind15m?.orderBlock;
+  if (ob && typeof ob.low === 'number' && typeof ob.high === 'number') {
+    if (currentPrice >= ob.low - 0.2 && currentPrice <= ob.high + 0.2) {
+      score += 4;
+    }
+  }
+  // Multi-timeframe trend alignment (15M and 5M structure agreement)
+  if (ind15m?.structure && ind5m?.structure && ind15m.structure === ind5m.structure && ind15m.structure !== 'RANGING') {
+    score += 3;
+  }
+  // Strong directional regime
+  if (ind15m?.marketRegime === 'STRONG_UPTREND' || ind15m?.marketRegime === 'STRONG_DOWNTREND') {
+    score += 2;
+  }
 
   return {
     swingHigh: swingH,
@@ -352,10 +464,10 @@ export function extractStructureEvidence(
     structureTrend: trend,
     hasBos: isBreakingHigh || isBreakingLow,
     bosDirection: isBreakingHigh ? 'BULLISH' : isBreakingLow ? 'BEARISH' : 'NONE',
-    hasChoch: ind15m.chochDetected ?? false,
-    chochDirection: ind15m.structure === 'BULLISH' ? 'BULLISH' : ind15m.structure === 'BEARISH' ? 'BEARISH' : 'NONE',
-    isRetestingBreak: Math.abs(currentPrice - swingH) <= atr * 0.8 || Math.abs(currentPrice - swingL) <= atr * 0.8,
-    retestLevel: Math.abs(currentPrice - swingH) <= atr * 0.8 ? swingH : Math.abs(currentPrice - swingL) <= atr * 0.8 ? swingL : null,
+    hasChoch: ind15m?.chochDetected ?? false,
+    chochDirection: ind15m?.structure === 'BULLISH' ? 'BULLISH' : ind15m?.structure === 'BEARISH' ? 'BEARISH' : 'NONE',
+    isRetestingBreak: isRetesting,
+    retestLevel: (atr > 0 && Math.abs(currentPrice - swingH) <= atr * 0.8) ? swingH : (atr > 0 && Math.abs(currentPrice - swingL) <= atr * 0.8) ? swingL : null,
     hasDisplacement: true,
     structuralInvalidationPrice: trend === 'BULLISH' ? swingL : swingH,
     evidenceScore: Math.min(25, score),
@@ -385,8 +497,9 @@ export function extractLiquidityEvidence(
   }
 
   const recent = candles5m.slice(-30);
-  const highs = recent.map((c) => c.high);
-  const lows = recent.map((c) => c.low);
+  const prior = recent.length > 1 ? recent.slice(0, -1) : recent;
+  const highs = prior.map((c) => c.high);
+  const lows = prior.map((c) => c.low);
   const maxH = highs.length > 0 ? Math.max(...highs) : currentPrice + 4;
   const minL = lows.length > 0 ? Math.min(...lows) : currentPrice - 4;
 
@@ -394,8 +507,15 @@ export function extractLiquidityEvidence(
   const isBuySweep = last ? last.low < minL && last.close > minL : false;
   const isSellSweep = last ? last.high > maxH && last.close < maxH : false;
 
-  let score = 18;
-  if (isBuySweep || isSellSweep) score = 24;
+  let score = 0;
+  if (isBuySweep || isSellSweep) {
+    score = 24;
+  } else if (ind15m?.liquiditySweepDetected) {
+    score = 20;
+  } else {
+    // Resting liquidity without an active sweep earns measured context points
+    score = 12;
+  }
 
   return {
     equalHighs: [{ price: maxH, touches: 2 }],
@@ -430,7 +550,7 @@ export function extractSessionRegimeEvidence(currentSpread = 0.15): SessionRegim
     session,
     volatilityRegime: session === 'OVERLAP_LONDON_NY' ? 'HIGH_VOLATILITY' : 'NORMAL_EXPANSION',
     spreadQuality,
-    evidenceScore: spreadQuality === 'TIGHT' || spreadQuality === 'NORMAL' ? 10 : 6,
+    evidenceScore: spreadQuality === 'TIGHT' ? 8 : spreadQuality === 'NORMAL' ? 5 : 0,
     description: `Session: ${session} | Spread: ${spreadQuality} (${currentSpread})`,
   };
 }
@@ -447,8 +567,19 @@ export function buildCompleteEvidenceBundle(params: {
   currentSpread?: number;
 }): Gbv5EvidenceBundle {
   const { currentPrice, candles1m = [], candles5m = [], indicators5m, indicators15m, indicators1h, currentSpread = 0.15 } = params;
-  const atr5m = indicators5m?.atr14 || 1.5;
-  const atr1m = atr5m * 0.45;
+  const atr5m = typeof indicators5m?.atr14 === 'number' && Number.isFinite(indicators5m.atr14) && indicators5m.atr14 > 0 ? indicators5m.atr14 : 0;
+
+  // Real M1 ATR from valid closed M1 candles (require at least 2 closed M1 candles)
+  let atr1m = 0;
+  if (Array.isArray(candles1m) && candles1m.length >= 2) {
+    const closed1m = candles1m.filter((c) => c && c.isClosed !== false);
+    if (closed1m.length >= 2) {
+      const calc1m = calculateATR(closed1m, 14);
+      if (Number.isFinite(calc1m) && calc1m > 0) {
+        atr1m = calc1m;
+      }
+    }
+  }
 
   return {
     priceActionM1: extractPriceActionEvidence(candles1m, atr1m),

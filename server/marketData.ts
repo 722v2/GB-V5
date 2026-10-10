@@ -707,10 +707,11 @@ export function validateHistoricalBacktestDataset(params: {
 
 export interface HistoricalDatasetResult {
   provider: 'MT5_BRIDGE' | 'BIQUOTE';
+  candles1m?: Candle[];
   candles5m: Candle[];
   candles15m: Candle[];
   candles1h: Candle[];
-  duplicatesRemoved: { '5m': number; '15m': number; '1h': number };
+  duplicatesRemoved: { '1m'?: number; '5m': number; '15m': number; '1h': number };
   validation: HistoricalDataValidationReport;
 }
 
@@ -736,21 +737,20 @@ export async function fetchHistoricalBacktestDataset(params: {
   const count15m = Math.min(20000, Math.ceil(spanHours * 4) + 150);
   const count1h = Math.min(10000, Math.ceil(spanHours * 1) + 100);
 
-  // 1. Try MT5 Bridge first if available
-  if (mt5Bridge.isAvailable()) {
+  // 1. Try MT5 Bridge historical candles if available
+  if (mt5Bridge.hasHistoricalCandles('M5')) {
     try {
-      console.log(`[HistoricalDataLoader] Attempting to fetch historical candles from MT5 Bridge (${count5m} bars 5M)...`);
-      const [mt55m, mt515m, mt51h] = await Promise.all([
-        mt5Bridge.fetchHistoricalCandles(symbol, 'M5', count5m),
-        mt5Bridge.fetchHistoricalCandles(symbol, 'M15', count15m),
-        mt5Bridge.fetchHistoricalCandles(symbol, 'H1', count1h),
-      ]);
+      const mt51m = mt5Bridge.getHistoricalCandles('M1') || [];
+      const mt55m = mt5Bridge.getHistoricalCandles('M5') || [];
+      const mt515m = mt5Bridge.getHistoricalCandles('M15') || [];
+      const mt51h = mt5Bridge.getHistoricalCandles('H1') || [];
 
-      if (mt55m && mt55m.length >= 30) {
+      if (mt55m.length >= 30) {
         // Filter candles strictly up to requestedEndTime so no future data is included
+        const filtered1m = mt51m.filter((c) => c.timestamp <= requestedEndTime);
         const filtered5m = mt55m.filter((c) => c.timestamp <= requestedEndTime);
-        const filtered15m = (mt515m || []).filter((c) => c.timestamp <= requestedEndTime);
-        const filtered1h = (mt51h || []).filter((c) => c.timestamp <= requestedEndTime);
+        const filtered15m = mt515m.filter((c) => c.timestamp <= requestedEndTime);
+        const filtered1h = mt51h.filter((c) => c.timestamp <= requestedEndTime);
 
         const validation = validateHistoricalBacktestDataset({
           provider: 'MT5_BRIDGE',
@@ -764,20 +764,19 @@ export async function fetchHistoricalBacktestDataset(params: {
           duplicatesRemoved: { '5m': 0, '15m': 0, '1h': 0 },
         });
 
-        console.log(`[HistoricalDataLoader] MT5 Bridge loaded successfully: ${filtered5m.length} 5M candles. Provider: MT5_BRIDGE`);
+        console.log(`[HistoricalDataLoader] MT5 Bridge loaded successfully: ${filtered1m.length} 1M and ${filtered5m.length} 5M candles. Provider: MT5_BRIDGE`);
         return {
           provider: 'MT5_BRIDGE',
+          candles1m: filtered1m,
           candles5m: filtered5m,
           candles15m: filtered15m,
           candles1h: filtered1h,
-          duplicatesRemoved: { '5m': 0, '15m': 0, '1h': 0 },
+          duplicatesRemoved: { '1m': 0, '5m': 0, '15m': 0, '1h': 0 },
           validation,
         };
-      } else {
-        console.warn(`[HistoricalDataLoader] MT5 Bridge returned insufficient or empty candles, falling back to Biquote.`);
       }
     } catch (err: any) {
-      console.warn(`[HistoricalDataLoader] MT5 Bridge fetch error: ${err.message}, falling back to Biquote.`);
+      console.warn(`[HistoricalDataLoader] MT5 Bridge cache fetch error: ${err.message}, falling back.`);
     }
   }
 

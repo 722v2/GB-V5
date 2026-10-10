@@ -1954,5 +1954,1571 @@
     "telegramMessageId": 68,
     "createdAt": 1791474272050,
     "sentAt": 1791474272165
+  },
+  {
+    "notificationId": "signal_sig_1791504553190_wungc",
+    "tradeId": "sig_1791504553190_wungc",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4146.34\n🛑 <b>وقف الخسارة (SL):</b> $4151.26 (49.2 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4138.52\n🎯 <b>الهدف الثاني (TP2):</b> $4130.97\n⚖️ <b>المخاطرة:</b> 19.68% ($4.92)\n🧠 <b>نسبة الثقة:</b> 92%\n🛠️ <b>النموذج الفني:</b> GB-V5 Liquidity Sweep &amp; Rejection (M1 Bearish SFP)\n\n⏱ <i>الوقت: ١٢:٠٩:١٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791504553190_wungc"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791504553190_wungc"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791504553190_wungc"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791504553190_wungc"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 77,
+    "createdAt": 1791504553190,
+    "sentAt": 1791504553293
+  },
+  {
+    "notificationId": "mgmt_mgmt_sig_1791504553190_wungc",
+    "tradeId": "sig_1791504553190_wungc",
+    "event": "UPDATE_SL",
+    "chatId": "1189889156",
+    "message": "🛡️ <b>إدارة الصفقة — تحديث وقف الخسارة</b>\n\n🔴 <b>SELL XAU/USD</b>\n\nCurrent: $4143.94\n\n📌 <b>لماذا؟</b>\nتحرك السعر لصالح الصفقة وتكوّن هيكل جديد يحمي الأرباح.\n\n🔧 <b>الإجراء:</b>\nحرّك SL من <b>$4151.26</b> إلى <b>$4146.14</b>.\n\n🎯 <b>TP2:</b>\n$4130.97\n\n⏱ <i>الوقت: ١٢:١٢:١٣ ص | نظام الإدارة المتقدمة Phase 4</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 78,
+    "createdAt": 1791504733170,
+    "sentAt": 1791504733510
+  },
+  {
+    "notificationId": "signal_sig_1791505536849_pdg8m",
+    "tradeId": "sig_1791505536849_pdg8m",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4143.27\n🛑 <b>وقف الخسارة (SL):</b> $4147.36 (40.9 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4130.97\n🎯 <b>الهدف الثاني (TP2):</b> $4115.06\n⚖️ <b>المخاطرة:</b> 16.36% ($4.09)\n🧠 <b>نسبة الثقة:</b> 86%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٢٥:٣٦ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791505536849_pdg8m"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791505536849_pdg8m"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791505536849_pdg8m"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791505536849_pdg8m"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 79,
+    "createdAt": 1791505536849,
+    "sentAt": 1791505537250
+  },
+  {
+    "notificationId": "signal_sig_1791505716836_a4x1a",
+    "tradeId": "sig_1791505716836_a4x1a",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4142.37\n🛑 <b>وقف الخسارة (SL):</b> $4146.46 (40.9 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4130.97\n🎯 <b>الهدف الثاني (TP2):</b> $4115.06\n⚖️ <b>المخاطرة:</b> 16.36% ($4.09)\n🧠 <b>نسبة الثقة:</b> 86%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٢٨:٣٦ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791505716836_a4x1a"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791505716836_a4x1a"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791505716836_a4x1a"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791505716836_a4x1a"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 80,
+    "createdAt": 1791505716836,
+    "sentAt": 1791505716972
+  },
+  {
+    "notificationId": "signal_sig_1791506016847_9hj35",
+    "tradeId": "sig_1791506016847_9hj35",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4147.02\n🛑 <b>وقف الخسارة (SL):</b> $4151.09 (40.7 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4141.52\n🎯 <b>الهدف الثاني (TP2):</b> $4130.97\n⚖️ <b>المخاطرة:</b> 16.28% ($4.07)\n🧠 <b>نسبة الثقة:</b> 87%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٣٣:٣٦ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791506016847_9hj35"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791506016847_9hj35"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791506016847_9hj35"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791506016847_9hj35"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 81,
+    "createdAt": 1791506016847,
+    "sentAt": 1791506016952
+  },
+  {
+    "notificationId": "mgmt_reversal_sig_1791504553190_wungc",
+    "tradeId": "sig_1791504553190_wungc",
+    "event": "REVERSAL_WATCH",
+    "chatId": "1189889156",
+    "message": "⚠️ <b>إدارة الصفقة — مراقبة انعكاس</b>\n\n🔴 <b>SELL XAU/USD</b>\nالدخول: $4146.34\nالسعر الحالي: $4149.54\nالربح/الخسارة العائمة: $3.20\n\n📌 <b>ماذا حدث؟</b>\nظهرت إشارات ضغط صاعد ضد صفقة البيع.\n\n🔎 <b>الأدلة:</b>\n• <b>فريم 5 دقائق (5M):</b> اختراق فوق مستوى المقاومة والقمة الهيكلية المحلية الأخيرة عند $4150.29\n• <b>فريم 15 دقيقة (15M):</b> ارتفاع مؤشر القوة النسبية (RSI) فوق 55 مما يعكس تباطؤاً في الزخم البيعي المعاكس.\n• <b>مستوى خطر:</b> مستوى $4149.26 يمثل مستوى مقاومة حرج قد يهدد سلامة الصفقة.\n\n🧠 <b>التقييم:</b>\nالضغط المعاكس موجود، لكنه لم يصل بعد إلى درجة تؤكد انعكاس الاتجاه.\n\n✅ <b>القرار الآن:</b>\nاستمرار الصفقة — لا تغلقها حالياً.\n\n🚨 <b>متى يتغير القرار؟</b>\nإذا حدث <b>[اختراق واضح ومؤكد لهيكل فريم 15 دقيقة (15M Bullish BOS) أعلى السعر الحالي أو تفعيل وقف الخسارة]</b>, تنتقل الحالة إلى CONFIRMED REVERSAL ويتم إرسال توصية خروج.\n\n⏱ <i>الوقت: ١٢:٣٤:٢٥ ص | نظام الإدارة المتقدمة Phase 4</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 82,
+    "createdAt": 1791506065717,
+    "sentAt": 1791506065800
+  },
+  {
+    "notificationId": "signal_sig_1791506196857_3sc0h",
+    "tradeId": "sig_1791506196857_3sc0h",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4148.14\n🛑 <b>وقف الخسارة (SL):</b> $4152.52 (43.8 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4141.52\n🎯 <b>الهدف الثاني (TP2):</b> $4131.73\n⚖️ <b>المخاطرة:</b> 17.52% ($4.38)\n🧠 <b>نسبة الثقة:</b> 90%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٣٦:٣٦ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791506196857_3sc0h"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791506196857_3sc0h"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791506196857_3sc0h"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791506196857_3sc0h"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 83,
+    "createdAt": 1791506196857,
+    "sentAt": 1791506196993
+  },
+  {
+    "notificationId": "signal_sig_1791506976855_b7nsp",
+    "tradeId": "sig_1791506976855_b7nsp",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4145.04\n🛑 <b>وقف الخسارة (SL):</b> $4149.35 (43.1 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4138.52\n🎯 <b>الهدف الثاني (TP2):</b> $4133.44\n⚖️ <b>المخاطرة:</b> 17.24% ($4.31)\n🧠 <b>نسبة الثقة:</b> 90%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٤٩:٣٦ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791506976855_b7nsp"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791506976855_b7nsp"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791506976855_b7nsp"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791506976855_b7nsp"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 84,
+    "createdAt": 1791506976855,
+    "sentAt": 1791506976990
+  },
+  {
+    "notificationId": "signal_sig_1791507180093_h54gs",
+    "tradeId": "sig_1791507180093_h54gs",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4144.13\n🛑 <b>وقف الخسارة (SL):</b> $4148.59 (44.6 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4135.21\n🎯 <b>الهدف الثاني (TP2):</b> $4109.17\n⚖️ <b>المخاطرة:</b> 17.84% ($4.46)\n🧠 <b>نسبة الثقة:</b> 80%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٥٣:٠٠ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791507180093_h54gs"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791507180093_h54gs"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791507180093_h54gs"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791507180093_h54gs"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 85,
+    "createdAt": 1791507180093,
+    "sentAt": 1791507180223
+  },
+  {
+    "notificationId": "signal_sig_1791507300087_hoqiz",
+    "tradeId": "sig_1791507300087_hoqiz",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4145.75\n🛑 <b>وقف الخسارة (SL):</b> $4150.21 (44.6 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4135.21\n🎯 <b>الهدف الثاني (TP2):</b> $4109.17\n⚖️ <b>المخاطرة:</b> 17.84% ($4.46)\n🧠 <b>نسبة الثقة:</b> 86%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١٢:٥٥:٠٠ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791507300087_hoqiz"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791507300087_hoqiz"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791507300087_hoqiz"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791507300087_hoqiz"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 86,
+    "createdAt": 1791507300087,
+    "sentAt": 1791507300210
+  },
+  {
+    "notificationId": "close_sig_1791505536849_pdg8m",
+    "tradeId": "sig_1791505536849_pdg8m",
+    "event": "OUTCOME_CLOSE",
+    "chatId": "1189889156",
+    "message": "<b>🔴 توثيق نتيجة صفقة من Gold AI!</b>\n\n📊 <b>الأصل:</b> XAU/USD\n🎯 <b>النتيجة:</b> صفقة خاسرة (LOSS)\n💰 <b>الربح/الخسارة المحققة:</b> $-4.09\n📈 <b>سعر الدخول:</b> $4143.27\n📉 <b>سعر الخروج:</b> $4147.36\nℹ️ <b>سبب الإغلاق:</b> Closed via Unified TradeManagementEngine [Trigger: SL @ $4147.36]\n\n⏱ <i>الوقت: ١:٠١:١٨ ص</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 87,
+    "createdAt": 1791507678991,
+    "sentAt": 1791507679117
+  },
+  {
+    "notificationId": "signal_sig_1791507793149_tcwzi",
+    "tradeId": "sig_1791507793149_tcwzi",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4149.63\n🛑 <b>وقف الخسارة (SL):</b> $4154.08 (44.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4135.79\n🎯 <b>الهدف الثاني (TP2):</b> $4115.06\n⚖️ <b>المخاطرة:</b> 17.8% ($4.45)\n🧠 <b>نسبة الثقة:</b> 86%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bearish)\n\n⏱ <i>الوقت: ١:٠٣:١٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791507793149_tcwzi"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791507793149_tcwzi"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791507793149_tcwzi"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791507793149_tcwzi"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 88,
+    "createdAt": 1791507793149,
+    "sentAt": 1791507793283
+  },
+  {
+    "notificationId": "signal_sig_1791507973166_hbu7h",
+    "tradeId": "sig_1791507973166_hbu7h",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4147.57\n🛑 <b>وقف الخسارة (SL):</b> $4151.71 (41.4 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4135.79\n🎯 <b>الهدف الثاني (TP2):</b> $4115.06\n⚖️ <b>المخاطرة:</b> 16.56% ($4.14)\n🧠 <b>نسبة الثقة:</b> 89%\n🛠️ <b>النموذج الفني:</b> GB-V5 Liquidity Sweep &amp; Rejection (M1 Bearish SFP)\n\n⏱ <i>الوقت: ١:٠٦:١٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791507973166_hbu7h"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791507973166_hbu7h"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791507973166_hbu7h"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791507973166_hbu7h"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 89,
+    "createdAt": 1791507973166,
+    "sentAt": 1791507973305
+  },
+  {
+    "notificationId": "close_sig_1791504553190_wungc",
+    "tradeId": "sig_1791504553190_wungc",
+    "event": "OUTCOME_CLOSE",
+    "chatId": "1189889156",
+    "message": "<b>🔴 توثيق نتيجة صفقة من Gold AI!</b>\n\n📊 <b>الأصل:</b> XAU/USD\n🎯 <b>النتيجة:</b> صفقة خاسرة (LOSS)\n💰 <b>الربح/الخسارة المحققة:</b> $-4.92\n📈 <b>سعر الدخول:</b> $4146.34\n📉 <b>سعر الخروج:</b> $4151.26\nℹ️ <b>سبب الإغلاق:</b> Closed via Unified TradeManagementEngine [Trigger: SL @ $4151.26]\n\n⏱ <i>الوقت: ١:١١:١١ ص</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 90,
+    "createdAt": 1791508271960,
+    "sentAt": 1791508272083
+  },
+  {
+    "notificationId": "signal_sig_1791510293354_br8mg",
+    "tradeId": "sig_1791510293354_br8mg",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4169.56\n🛑 <b>وقف الخسارة (SL):</b> $4173.91 (43.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4160.39\n🎯 <b>الهدف الثاني (TP2):</b> $4148.24\n⚖️ <b>المخاطرة:</b> 17.4% ($4.35)\n🧠 <b>نسبة الثقة:</b> 82%\n🛠️ <b>النموذج الفني:</b> GB-V5 Range Sweep &amp; SFP (M1 Range Top Fade)\n\n⏱ <i>الوقت: ١:٤٤:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791510293354_br8mg"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791510293354_br8mg"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791510293354_br8mg"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791510293354_br8mg"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 91,
+    "createdAt": 1791510293354,
+    "sentAt": 1791510293509
+  },
+  {
+    "notificationId": "signal_sig_1791512813387_tvqis",
+    "tradeId": "sig_1791512813387_tvqis",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4171.55\n🛑 <b>وقف الخسارة (SL):</b> $4166.73 (48.2 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4177.26\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 19.28% ($4.82)\n🧠 <b>نسبة الثقة:</b> 81%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٢٦:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791512813387_tvqis"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791512813387_tvqis"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791512813387_tvqis"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791512813387_tvqis"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 92,
+    "createdAt": 1791512813387,
+    "sentAt": 1791512813489
+  },
+  {
+    "notificationId": "signal_sig_1791513353390_vwkxm",
+    "tradeId": "sig_1791513353390_vwkxm",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4172.44\n🛑 <b>وقف الخسارة (SL):</b> $4167.89 (45.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4177.26\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.2% ($4.55)\n🧠 <b>نسبة الثقة:</b> 76%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٣٥:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513353390_vwkxm"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513353390_vwkxm"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513353390_vwkxm"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513353390_vwkxm"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 93,
+    "createdAt": 1791513353390,
+    "sentAt": 1791513353504
+  },
+  {
+    "notificationId": "signal_sig_1791513413410_zsjir",
+    "tradeId": "sig_1791513413410_zsjir",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4173.31\n🛑 <b>وقف الخسارة (SL):</b> $4168.76 (45.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4183.73\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.2% ($4.55)\n🧠 <b>نسبة الثقة:</b> 76%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٣٦:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513413410_zsjir"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513413410_zsjir"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513413410_zsjir"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513413410_zsjir"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 94,
+    "createdAt": 1791513413410,
+    "sentAt": 1791513413524
+  },
+  {
+    "notificationId": "signal_sig_1791513473388_0hgbw",
+    "tradeId": "sig_1791513473388_0hgbw",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4174.42\n🛑 <b>وقف الخسارة (SL):</b> $4169.87 (45.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4183.73\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.2% ($4.55)\n🧠 <b>نسبة الثقة:</b> 78%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٣٧:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513473388_0hgbw"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513473388_0hgbw"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513473388_0hgbw"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513473388_0hgbw"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 95,
+    "createdAt": 1791513473388,
+    "sentAt": 1791513473503
+  },
+  {
+    "notificationId": "signal_sig_1791513533402_2zn5b",
+    "tradeId": "sig_1791513533402_2zn5b",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4176.93\n🛑 <b>وقف الخسارة (SL):</b> $4172.90 (40.3 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4183.73\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 16.12% ($4.03)\n🧠 <b>نسبة الثقة:</b> 77%\n🛠️ <b>النموذج الفني:</b> GB-V5 Structure Break &amp; Retest (M1 Bullish BOS)\n\n⏱ <i>الوقت: ٢:٣٨:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513533402_2zn5b"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513533402_2zn5b"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513533402_2zn5b"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513533402_2zn5b"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 96,
+    "createdAt": 1791513533402,
+    "sentAt": 1791513533512
+  },
+  {
+    "notificationId": "signal_sig_1791513653397_3mla1",
+    "tradeId": "sig_1791513653397_3mla1",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4176.49\n🛑 <b>وقف الخسارة (SL):</b> $4171.67 (48.2 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4183.07\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 19.28% ($4.82)\n🧠 <b>نسبة الثقة:</b> 84%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٤٠:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513653397_3mla1"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513653397_3mla1"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513653397_3mla1"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513653397_3mla1"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 97,
+    "createdAt": 1791513653397,
+    "sentAt": 1791513653544
+  },
+  {
+    "notificationId": "signal_sig_1791513893406_n76kn",
+    "tradeId": "sig_1791513893406_n76kn",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4175.67\n🛑 <b>وقف الخسارة (SL):</b> $4170.85 (48.2 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4183.07\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 19.28% ($4.82)\n🧠 <b>نسبة الثقة:</b> 84%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٤٤:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791513893406_n76kn"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791513893406_n76kn"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791513893406_n76kn"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791513893406_n76kn"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 98,
+    "createdAt": 1791513893406,
+    "sentAt": 1791513893544
+  },
+  {
+    "notificationId": "signal_sig_1791514433393_f7m7g",
+    "tradeId": "sig_1791514433393_f7m7g",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4177.31\n🛑 <b>وقف الخسارة (SL):</b> $4172.65 (46.6 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4192.53\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.64% ($4.66)\n🧠 <b>نسبة الثقة:</b> 90%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٥٣:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791514433393_f7m7g"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791514433393_f7m7g"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791514433393_f7m7g"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791514433393_f7m7g"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 99,
+    "createdAt": 1791514433393,
+    "sentAt": 1791514433554
+  },
+  {
+    "notificationId": "signal_sig_1791514553431_h992g",
+    "tradeId": "sig_1791514553431_h992g",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4178.44\n🛑 <b>وقف الخسارة (SL):</b> $4173.86 (45.8 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4192.53\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.32% ($4.58)\n🧠 <b>نسبة الثقة:</b> 90%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٢:٥٥:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791514553431_h992g"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791514553431_h992g"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791514553431_h992g"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791514553431_h992g"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 100,
+    "createdAt": 1791514553431,
+    "sentAt": 1791514553592
+  },
+  {
+    "notificationId": "signal_sig_1791519953485_toa58",
+    "tradeId": "sig_1791519953485_toa58",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4183.25\n🛑 <b>وقف الخسارة (SL):</b> $4178.99 (42.6 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.85\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.04% ($4.26)\n🧠 <b>نسبة الثقة:</b> 85%\n🛠️ <b>النموذج الفني:</b> GB-V5 Structure Break &amp; Retest (M1 Bullish BOS)\n\n⏱ <i>الوقت: ٤:٢٥:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791519953485_toa58"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791519953485_toa58"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791519953485_toa58"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791519953485_toa58"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 101,
+    "createdAt": 1791519953485,
+    "sentAt": 1791519953601
+  },
+  {
+    "notificationId": "signal_sig_1791522113475_43dwl",
+    "tradeId": "sig_1791522113475_43dwl",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4186.24\n🛑 <b>وقف الخسارة (SL):</b> $4181.85 (43.9 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4194.91\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.56% ($4.39)\n🧠 <b>نسبة الثقة:</b> 83%\n🛠️ <b>النموذج الفني:</b> GB-V5 Structure Break &amp; Retest (M1 Bullish BOS)\n\n⏱ <i>الوقت: ٥:٠١:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791522113475_43dwl"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791522113475_43dwl"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791522113475_43dwl"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791522113475_43dwl"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 102,
+    "createdAt": 1791522113475,
+    "sentAt": 1791522113654
+  },
+  {
+    "notificationId": "signal_sig_1791522713530_5qorv",
+    "tradeId": "sig_1791522713530_5qorv",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4186.57\n🛑 <b>وقف الخسارة (SL):</b> $4182.54 (40.3 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4194.91\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 16.12% ($4.03)\n🧠 <b>نسبة الثقة:</b> 89%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:١١:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791522713530_5qorv"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791522713530_5qorv"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791522713530_5qorv"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791522713530_5qorv"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 103,
+    "createdAt": 1791522713530,
+    "sentAt": 1791522713681
+  },
+  {
+    "notificationId": "signal_sig_1791523013490_0yy0h",
+    "tradeId": "sig_1791523013490_0yy0h",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4188.83\n🛑 <b>وقف الخسارة (SL):</b> $4184.29 (45.4 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4196.03\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 18.16% ($4.54)\n🧠 <b>نسبة الثقة:</b> 80%\n🛠️ <b>النموذج الفني:</b> GB-V5 Structure Break &amp; Retest (M1 Bullish BOS)\n\n⏱ <i>الوقت: ٥:١٦:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791523013490_0yy0h"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791523013490_0yy0h"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791523013490_0yy0h"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791523013490_0yy0h"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 104,
+    "createdAt": 1791523013490,
+    "sentAt": 1791523013617
+  },
+  {
+    "notificationId": "signal_sig_1791523253499_ajzgx",
+    "tradeId": "sig_1791523253499_ajzgx",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4190.43\n🛑 <b>وقف الخسارة (SL):</b> $4186.39 (40.4 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4196.03\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 16.16% ($4.04)\n🧠 <b>نسبة الثقة:</b> 81%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:٢٠:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791523253499_ajzgx"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791523253499_ajzgx"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791523253499_ajzgx"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791523253499_ajzgx"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 105,
+    "createdAt": 1791523253499,
+    "sentAt": 1791523253612
+  },
+  {
+    "notificationId": "signal_sig_1791524093511_b4bsr",
+    "tradeId": "sig_1791524093511_b4bsr",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4199.84\n🛑 <b>وقف الخسارة (SL):</b> $4195.47 (43.7 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4220.59\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.48% ($4.37)\n🧠 <b>نسبة الثقة:</b> 79%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:٣٤:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524093511_b4bsr"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524093511_b4bsr"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524093511_b4bsr"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524093511_b4bsr"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 106,
+    "createdAt": 1791524093511,
+    "sentAt": 1791524093622
+  },
+  {
+    "notificationId": "signal_sig_1791524153544_u5d2r",
+    "tradeId": "sig_1791524153544_u5d2r",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4201.37\n🛑 <b>وقف الخسارة (SL):</b> $4196.97 (44 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4222.11\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.6% ($4.40)\n🧠 <b>نسبة الثقة:</b> 79%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:٣٥:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524153544_u5d2r"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524153544_u5d2r"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524153544_u5d2r"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524153544_u5d2r"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 107,
+    "createdAt": 1791524153544,
+    "sentAt": 1791524153684
+  },
+  {
+    "notificationId": "signal_sig_1791524273501_v5gbt",
+    "tradeId": "sig_1791524273501_v5gbt",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4206.52\n🛑 <b>وقف الخسارة (SL):</b> $4202.12 (44 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4223.67\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.6% ($4.40)\n🧠 <b>نسبة الثقة:</b> 79%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:٣٧:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524273501_v5gbt"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524273501_v5gbt"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524273501_v5gbt"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524273501_v5gbt"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 108,
+    "createdAt": 1791524273501,
+    "sentAt": 1791524273603
+  },
+  {
+    "notificationId": "signal_sig_1791524333551_lzws9",
+    "tradeId": "sig_1791524333551_lzws9",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4204.81\n🛑 <b>وقف الخسارة (SL):</b> $4200.41 (44 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4223.67\n🎯 <b>الهدف الثاني (TP2):</b> غير محدد\n⚖️ <b>المخاطرة:</b> 17.6% ($4.40)\n🧠 <b>نسبة الثقة:</b> 81%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٥:٣٨:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524333551_lzws9"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524333551_lzws9"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524333551_lzws9"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524333551_lzws9"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 109,
+    "createdAt": 1791524333551,
+    "sentAt": 1791524333691
+  },
+  {
+    "notificationId": "signal_sig_1791524513511_sfhfl",
+    "tradeId": "sig_1791524513511_sfhfl",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4200.98\n🛑 <b>وقف الخسارة (SL):</b> $4205.86 (48.8 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4190.78\n🎯 <b>الهدف الثاني (TP2):</b> $4181.85\n⚖️ <b>المخاطرة:</b> 19.52% ($4.88)\n🧠 <b>نسبة الثقة:</b> 76%\n🛠️ <b>النموذج الفني:</b> GB-V5 Liquidity Sweep &amp; Rejection (M1 Bearish SFP)\n\n⏱ <i>الوقت: ٥:٤١:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524513511_sfhfl"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524513511_sfhfl"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524513511_sfhfl"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524513511_sfhfl"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 110,
+    "createdAt": 1791524513511,
+    "sentAt": 1791524513627
+  },
+  {
+    "notificationId": "signal_sig_1791524813500_v7inx",
+    "tradeId": "sig_1791524813500_v7inx",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4199.63\n🛑 <b>وقف الخسارة (SL):</b> $4203.81 (41.8 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4190.78\n🎯 <b>الهدف الثاني (TP2):</b> $4186.97\n⚖️ <b>المخاطرة:</b> 16.72% ($4.18)\n🧠 <b>نسبة الثقة:</b> 86%\n🛠️ <b>النموذج الفني:</b> GB-V5 Liquidity Sweep &amp; Rejection (M1 Bearish SFP)\n\n⏱ <i>الوقت: ٥:٤٦:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791524813500_v7inx"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791524813500_v7inx"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791524813500_v7inx"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791524813500_v7inx"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 111,
+    "createdAt": 1791524813500,
+    "sentAt": 1791524813657
+  },
+  {
+    "notificationId": "signal_sig_1791525113515_8ik82",
+    "tradeId": "sig_1791525113515_8ik82",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🔴 <b>الصفقة المقترحة:</b> بيع الآن (SELL NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4197.53\n🛑 <b>وقف الخسارة (SL):</b> $4201.62 (40.9 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4190.78\n🎯 <b>الهدف الثاني (TP2):</b> $4186.97\n⚖️ <b>المخاطرة:</b> 16.36% ($4.09)\n🧠 <b>نسبة الثقة:</b> 83%\n🛠️ <b>النموذج الفني:</b> GB-V5 Liquidity Sweep &amp; Rejection (M1 Bearish SFP)\n\n⏱ <i>الوقت: ٥:٥١:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791525113515_8ik82"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791525113515_8ik82"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791525113515_8ik82"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791525113515_8ik82"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 112,
+    "createdAt": 1791525113515,
+    "sentAt": 1791525113652
+  },
+  {
+    "notificationId": "signal_sig_1791537113635_rlnl5",
+    "tradeId": "sig_1791537113635_rlnl5",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4185.62\n🛑 <b>وقف الخسارة (SL):</b> $4181.52 (41 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.76\n🎯 <b>الهدف الثاني (TP2):</b> $4197.20\n⚖️ <b>المخاطرة:</b> 16.4% ($4.10)\n🧠 <b>نسبة الثقة:</b> 78%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٩:١١:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791537113635_rlnl5"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791537113635_rlnl5"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791537113635_rlnl5"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791537113635_rlnl5"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 113,
+    "createdAt": 1791537113635,
+    "sentAt": 1791537113851
+  },
+  {
+    "notificationId": "mgmt_mgmt_sig_1791537113635_rlnl5",
+    "tradeId": "sig_1791537113635_rlnl5",
+    "event": "UPDATE_SL",
+    "chatId": "1189889156",
+    "message": "🛡️ <b>إدارة الصفقة — تحديث وقف الخسارة</b>\n\n🟢 <b>BUY XAU/USD</b>\n\nCurrent: $4186.50\n\n📌 <b>لماذا؟</b>\nتحرك السعر لصالح الصفقة وتكوّن هيكل جديد يحمي الأرباح.\n\n🔧 <b>الإجراء:</b>\nحرّك SL من <b>$4181.52</b> إلى <b>$4185.14</b>.\n\n🎯 <b>TP2:</b>\n$4197.20\n\n⏱ <i>الوقت: ٩:١٣:١٤ ص | نظام الإدارة المتقدمة Phase 4</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 114,
+    "createdAt": 1791537194877,
+    "sentAt": 1791537194966
+  },
+  {
+    "notificationId": "signal_sig_1791537953694_77290",
+    "tradeId": "sig_1791537953694_77290",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4187.24\n🛑 <b>وقف الخسارة (SL):</b> $4183.15 (40.9 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.76\n🎯 <b>الهدف الثاني (TP2):</b> $4197.87\n⚖️ <b>المخاطرة:</b> 16.36% ($4.09)\n🧠 <b>نسبة الثقة:</b> 82%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٩:٢٥:٥٣ ص</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791537953694_77290"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791537953694_77290"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791537953694_77290"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791537953694_77290"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 115,
+    "createdAt": 1791537953694,
+    "sentAt": 1791537953950
+  },
+  {
+    "notificationId": "early_exit_sig_1791537113635_rlnl5",
+    "tradeId": "sig_1791537113635_rlnl5",
+    "event": "EARLY_EXIT",
+    "chatId": "1189889156",
+    "message": "🚨 <b>إدارة الصفقة — انعكاس مؤكد</b>\n\n🟢 <b>BUY XAU/USD</b>\nEntry: $4185.62\nCurrent: $4184.73\nFloating P&L: $0.89\n\n🔴 <b>ماذا حدث؟</b>\nتم تأكيد انعكاس هابط ضد صفقة الشراء.\n\n🔎 <b>التأكيد:</b>\n• 15M Bearish BOS\n• 5M break of recent Swing Low at $4184.62\n• 1H/15M context: EMA bearish crossing and structural break\n\n🚨 <b>القرار:</b>\nإغلاق الصفقة الآن.\n\n⚠️ <b>السبب:</b>\nفرضية الشراء لم تعد صالحة.\n\n⏱ <i>الوقت: ٩:٣٥:٠٤ ص | نظام الإدارة المتقدمة Phase 4</i>",
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 116,
+    "createdAt": 1791538503958,
+    "sentAt": 1791538504148
+  },
+  {
+    "notificationId": "signal_sig_1791549322969_qxnh8",
+    "tradeId": "sig_1791549322969_qxnh8",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4184.41\n🛑 <b>وقف الخسارة (SL):</b> $4179.96 (44.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.76\n🎯 <b>الهدف الثاني (TP2):</b> $4207.60\n⚖️ <b>المخاطرة:</b> 17.8% ($4.45)\n🧠 <b>نسبة الثقة:</b> 77%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ١٢:٣٥:٢٣ م</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791549322969_qxnh8"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791549322969_qxnh8"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791549322969_qxnh8"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791549322969_qxnh8"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 117,
+    "createdAt": 1791549322969,
+    "sentAt": 1791549323184
+  },
+  {
+    "notificationId": "signal_sig_1791549502937_i55sy",
+    "tradeId": "sig_1791549502937_i55sy",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4182.41\n🛑 <b>وقف الخسارة (SL):</b> $4177.96 (44.5 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.76\n🎯 <b>الهدف الثاني (TP2):</b> $4207.60\n⚖️ <b>المخاطرة:</b> 17.8% ($4.45)\n🧠 <b>نسبة الثقة:</b> 77%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ١٢:٣٨:٢٢ م</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791549502937_i55sy"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791549502937_i55sy"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791549502937_i55sy"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791549502937_i55sy"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 118,
+    "createdAt": 1791549502937,
+    "sentAt": 1791549503113
+  },
+  {
+    "notificationId": "signal_sig_1791549982929_jtav5",
+    "tradeId": "sig_1791549982929_jtav5",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4179.47\n🛑 <b>وقف الخسارة (SL):</b> $4174.81 (46.6 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4191.77\n🎯 <b>الهدف الثاني (TP2):</b> $4207.60\n⚖️ <b>المخاطرة:</b> 18.64% ($4.66)\n🧠 <b>نسبة الثقة:</b> 77%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ١٢:٤٦:٢٣ م</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791549982929_jtav5"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791549982929_jtav5"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791549982929_jtav5"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791549982929_jtav5"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 119,
+    "createdAt": 1791549982929,
+    "sentAt": 1791549983110
+  },
+  {
+    "notificationId": "signal_sig_1791562922634_9eq2u",
+    "tradeId": "sig_1791562922634_9eq2u",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4189.43\n🛑 <b>وقف الخسارة (SL):</b> $4184.63 (48 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4196.52\n🎯 <b>الهدف الثاني (TP2):</b> $4207.60\n⚖️ <b>المخاطرة:</b> 19.2% ($4.80)\n🧠 <b>نسبة الثقة:</b> 80%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٤:٢٢:٠٢ م</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791562922634_9eq2u"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791562922634_9eq2u"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791562922634_9eq2u"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791562922634_9eq2u"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 153,
+    "createdAt": 1791562922634,
+    "sentAt": 1791562922810
+  },
+  {
+    "notificationId": "signal_sig_1791563042667_oz5r2",
+    "tradeId": "sig_1791563042667_oz5r2",
+    "event": "SIGNAL_NEW",
+    "chatId": "1189889156",
+    "message": "<b>🔔 إشارة تداول جديدة من Gold AI Scanner!</b>\n\n🟢 <b>الصفقة المقترحة:</b> شراء الآن (BUY NOW)\n📊 <b>الأصل:</b> XAU/USD\n📈 <b>سعر الدخول:</b> $4188.62\n🛑 <b>وقف الخسارة (SL):</b> $4183.82 (48 نقطة)\n🎯 <b>الهدف الأول (TP1):</b> $4196.52\n🎯 <b>الهدف الثاني (TP2):</b> $4207.60\n⚖️ <b>المخاطرة:</b> 19.2% ($4.80)\n🧠 <b>نسبة الثقة:</b> 77%\n🛠️ <b>النموذج الفني:</b> GB-V5 Trend Continuation &amp; Value Pullback (M1 Bullish)\n\n⏱ <i>الوقت: ٤:٢٤:٠٢ م</i>",
+    "replyMarkup": {
+      "inline_keyboard": [
+        [
+          {
+            "text": "🟢 دخلت الصفقة (ENTERED)",
+            "callback_data": "entered:sig_1791563042667_oz5r2"
+          },
+          {
+            "text": "⚪ لم أدخل (NOT ENTERED)",
+            "callback_data": "not_entered:sig_1791563042667_oz5r2"
+          }
+        ],
+        [
+          {
+            "text": "✅ WIN",
+            "callback_data": "win:sig_1791563042667_oz5r2"
+          },
+          {
+            "text": "❌ LOSS",
+            "callback_data": "loss:sig_1791563042667_oz5r2"
+          }
+        ]
+      ]
+    },
+    "status": "SENT",
+    "attempts": 1,
+    "maxAttempts": 10,
+    "nextRetryAt": 0,
+    "telegramMessageId": 154,
+    "createdAt": 1791563042667,
+    "sentAt": 1791563042985
   }
 ]

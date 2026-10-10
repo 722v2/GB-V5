@@ -108,7 +108,7 @@ async function runPipelineContractTests() {
     ema200: 2500,
     bollingerBands: { upper: 2510, middle: 2500, lower: 2490, bandwidth: 20 },
     pivotPoints: { pivot: 2500, r1: 2510, s1: 2490, r2: 2520, s2: 2480 },
-  };
+  } as any;
 
   const noSetupInput: MarketAnalysisInput = {
     asset: 'XAU/USD',

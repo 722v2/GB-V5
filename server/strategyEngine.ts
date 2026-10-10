@@ -98,17 +98,39 @@ export function extractSessionExtremes(candles: Candle[]): {
   nyLow?: number;
 } {
   if (!candles || candles.length === 0) return {};
-  const highs = candles.map((c) => c.high);
-  const lows = candles.map((c) => c.low);
+  const lastCandle = candles[candles.length - 1];
+  const lastTime = lastCandle && typeof lastCandle.timestamp === 'number' ? new Date(lastCandle.timestamp) : new Date();
+  const startOfDayUtc = Date.UTC(lastTime.getUTCFullYear(), lastTime.getUTCMonth(), lastTime.getUTCDate(), 0, 0, 0, 0);
+
+  const dayCandles = candles.filter((c) => c.timestamp && c.timestamp >= startOfDayUtc);
+  const targetCandles = dayCandles.length > 0 ? dayCandles : candles;
+
+  const highs = targetCandles.map((c) => c.high);
+  const lows = targetCandles.map((c) => c.low);
   const maxHigh = Math.max(...highs);
   const minLow = Math.min(...lows);
+
+  // Asian session: 00:00 - 08:00 UTC
+  const asianCandles = targetCandles.filter((c) => {
+    if (!c.timestamp) return false;
+    const h = new Date(c.timestamp).getUTCHours();
+    return h >= 0 && h < 8;
+  });
+
+  // London session: 07:00 - 16:00 UTC
+  const londonCandles = targetCandles.filter((c) => {
+    if (!c.timestamp) return false;
+    const h = new Date(c.timestamp).getUTCHours();
+    return h >= 7 && h < 16;
+  });
+
   return {
     sessionHigh: maxHigh,
     sessionLow: minLow,
-    asianHigh: Math.max(...highs.slice(0, 15)),
-    asianLow: Math.min(...lows.slice(0, 15)),
-    londonHigh: maxHigh,
-    londonLow: minLow,
+    asianHigh: asianCandles.length > 0 ? Math.max(...asianCandles.map((c) => c.high)) : Math.max(...highs.slice(0, 15)),
+    asianLow: asianCandles.length > 0 ? Math.min(...asianCandles.map((c) => c.low)) : Math.min(...lows.slice(0, 15)),
+    londonHigh: londonCandles.length > 0 ? Math.max(...londonCandles.map((c) => c.high)) : maxHigh,
+    londonLow: londonCandles.length > 0 ? Math.min(...londonCandles.map((c) => c.low)) : minLow,
     nyHigh: maxHigh,
     nyLow: minLow,
   };
@@ -193,14 +215,14 @@ export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput)
     indicators1h: input.indicators1h,
     brokerSpecs: input.brokerSpecs || DEFAULT_BROKER_SPECS,
     activeTradeDirection: input.activeTradeDirection || null,
-    minConfidence: input.minConfidence || 70,
+    minConfidence: input.minConfidence,
   };
 
   const { candidates } = discoverGbv5Candidates(brainInput);
 
   const mappedCandidates: SetupCandidate[] = candidates.map((c) => ({
-    family: c.legacyFamilyAlias,
-    strategyFamily: c.legacyFamilyAlias,
+    family: c.family,
+    strategyFamily: c.family,
     setupName: c.setupName,
     direction: c.direction,
     orderType: c.orderType,
@@ -241,8 +263,10 @@ export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput)
   const rankedCandidates = [...mappedCandidates].sort(compareCandidatesByQuality);
 
   // Filter eligible candidates by minimum confidence & active trade direction
-  const minConf = brainInput.minConfidence ?? 70;
-  let eligibleCandidates = rankedCandidates.filter((c) => (c.confidence ?? 0) >= minConf);
+  const minConf = brainInput.minConfidence;
+  let eligibleCandidates = minConf !== undefined
+    ? rankedCandidates.filter((c) => (c.confidence ?? 0) >= minConf)
+    : rankedCandidates;
 
   if (brainInput.activeTradeDirection) {
     eligibleCandidates = eligibleCandidates.filter((c) => c.direction === brainInput.activeTradeDirection);

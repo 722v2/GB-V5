@@ -18,6 +18,19 @@ function generateValidCandles(count: number = 50, basePrice: number = 2500): Can
       isClosed: true,
     });
   }
+  // Authentic pullback on penultimate candle followed by continuation trigger on last candle
+  if (candles.length >= 2) {
+    const pen = candles[candles.length - 2];
+    pen.open = pen.close + 0.8;
+    pen.close = pen.open - 1.2; // Red pullback candle
+    pen.low = pen.close - 0.5;
+    pen.high = pen.open + 0.2;
+    const last = candles[candles.length - 1];
+    last.open = pen.close;
+    last.close = pen.close + 2.0; // Green continuation trigger
+    last.high = last.close + 0.5;
+    last.low = pen.close - 0.2;
+  }
   return candles;
 }
 
@@ -238,11 +251,23 @@ async function runBrainSignalUnificationTests() {
   // -------------------------------------------------------------------------
   console.log('\nTEST H: allCandidates preserves complete discovery collection in discovery order');
   {
+    const candles1m = generateValidCandles(30, currentPrice);
+    candles1m[candles1m.length - 1] = {
+      timestamp: Date.now(),
+      open: currentPrice + 2,
+      high: currentPrice + 10,
+      low: currentPrice + 1,
+      close: currentPrice + 8, // > swingHigh
+      volume: 2000,
+      isClosed: true,
+    };
+
     const engineInput = {
       asset: 'XAU/USD' as const,
       balance: 100,
-      currentPrice,
+      currentPrice: currentPrice + 8,
       candles5m,
+      candles1m,
       indicators5m,
       indicators15m,
       indicators1h,

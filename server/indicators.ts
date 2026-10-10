@@ -79,7 +79,14 @@ export function calculateRSI(closes: number[], period: number = 14): number {
 }
 
 // Calculate MACD (12, 26, 9)
-export function calculateMACD(closes: number[]): { macd: number; signal: number; histogram: number } {
+export function calculateMACD(closes: number[]): {
+  macd: number;
+  signal: number;
+  histogram: number;
+  prevHistogram?: number;
+  recentCrossoverBarsAgo?: number;
+  zeroLineTransition?: 'CROSSED_ABOVE' | 'CROSSED_BELOW' | 'NONE';
+} {
   if (!closes || closes.length < 26) {
     return { macd: 0, signal: 0, histogram: 0 };
   }
@@ -115,11 +122,63 @@ export function calculateMACD(closes: number[]): { macd: number; signal: number;
   }
 
   const histogram = latestMacd - latestSignal;
-  
+
+  // Build historical series of valid MACD, Signal, and Histogram values across closed history
+  const histPoints: { idx: number; macd: number; signal: number; histogram: number }[] = [];
+  for (let i = 0; i < closes.length; i++) {
+    const m = macdLine[i];
+    const s = signalLine[i];
+    if (m !== undefined && Number.isFinite(m) && s !== undefined && Number.isFinite(s)) {
+      histPoints.push({
+        idx: i,
+        macd: Number(m.toFixed(3)),
+        signal: Number(s.toFixed(3)),
+        histogram: Number((m - s).toFixed(3)),
+      });
+    }
+  }
+
+  let prevHistogram: number | undefined = undefined;
+  let recentCrossoverBarsAgo: number | undefined = undefined;
+  let zeroLineTransition: 'CROSSED_ABOVE' | 'CROSSED_BELOW' | 'NONE' | undefined = undefined;
+
+  if (histPoints.length >= 2) {
+    const currPoint = histPoints[histPoints.length - 1];
+    const prevPoint = histPoints[histPoints.length - 2];
+    prevHistogram = prevPoint.histogram;
+
+    // Detect real zeroLineTransition on latest closed candle relative to previous closed candle
+    if (prevPoint.macd <= 0 && currPoint.macd > 0) {
+      zeroLineTransition = 'CROSSED_ABOVE';
+    } else if (prevPoint.macd >= 0 && currPoint.macd < 0) {
+      zeroLineTransition = 'CROSSED_BELOW';
+    } else {
+      zeroLineTransition = 'NONE';
+    }
+
+    // Detect recent crossover between MACD line and Signal line looking back across history
+    // A crossover at bar step i means (m[i-1] - s[i-1]) and (m[i] - s[i]) have opposite signs
+    for (let k = histPoints.length - 1; k >= 1; k--) {
+      const pCurr = histPoints[k];
+      const pPrev = histPoints[k - 1];
+      const diffCurr = pCurr.macd - pCurr.signal;
+      const diffPrev = pPrev.macd - pPrev.signal;
+
+      const isCrossover = (diffPrev <= 0 && diffCurr > 0) || (diffPrev >= 0 && diffCurr < 0);
+      if (isCrossover) {
+        recentCrossoverBarsAgo = (histPoints.length - 1) - k;
+        break;
+      }
+    }
+  }
+
   return {
     macd: Number(latestMacd.toFixed(3)),
     signal: Number(latestSignal.toFixed(3)),
     histogram: Number(histogram.toFixed(3)),
+    ...(prevHistogram !== undefined ? { prevHistogram } : {}),
+    ...(recentCrossoverBarsAgo !== undefined ? { recentCrossoverBarsAgo } : {}),
+    ...(zeroLineTransition !== undefined ? { zeroLineTransition } : {}),
   };
 }
 

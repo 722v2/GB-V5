@@ -3,7 +3,7 @@ services:
     name: gold-ai-challenge-scanner
     runtime: node
     plan: free
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -12,9 +12,9 @@ services:
       - key: TRADING_RUNTIME_MODE
         value: production
       - key: ENABLE_INTERNAL_SCANNER
-        value: "false"
+        value: "true"
       - key: SCANNER_TRIGGER_MODE
-        value: cron
+        value: interval
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_BASE_URL
@@ -37,3 +37,9 @@ services:
         sync: false
       - key: FIREBASE_CONFIG
         sync: false
+      - key: MT5_BRIDGE_TOKEN
+        sync: false
+      - key: MT5_MAGIC_NUMBER
+        value: "240726"
+      - key: MT5_ALLOWED_SYMBOLS
+        value: "XAUUSD,GOLD,XAUUSDm,XAUUSD.a,XAUUSD.raw,XAUUSDb"

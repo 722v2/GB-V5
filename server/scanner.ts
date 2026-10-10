@@ -1020,6 +1020,11 @@ class LiveMarketScanner {
         const mt5Status = await mt5Bridge.getAccountStatus();
         if (mt5Status.connected && typeof mt5Status.balance === 'number' && mt5Status.balance > 0) {
           activeCapital = mt5Status.balance;
+          // Validate live broker symbol specifications
+          if (!mt5Bridge.isBrokerSpecsValid()) {
+            isExecutionBlocked = true;
+            blockReason = 'مواصفات الرمز غير متوفرة أو غير صالحة من وسيط MT5 (Broker symbol specifications missing or invalid).';
+          }
         } else {
           isExecutionBlocked = true;
           blockReason = 'MT5 / Broker is DISCONNECTED. Execution blocked (حساب MT5 غير متصل - تم حظر فتح صفقات جديدة).';
@@ -1031,16 +1036,18 @@ class LiveMarketScanner {
       }
 
       this.currentBalance = activeCapital;
+      const liveMt5Specs = settings.capitalSource === 'MT5' ? mt5Bridge.getBrokerSpecs() : null;
+
       this.brokerSpecs = {
         accountBalance: activeCapital,
         riskPercent: settings.riskPerTrade,
-        contractSizeOz: settings.contractSizeOz,
-        minimumLot: settings.minimumLot,
-        maximumLot: settings.maximumLot,
-        lotStep: settings.lotStep,
-        minGoldSlPoints: settings.minGoldSlPoints ?? 35,
-        maxGoldSlPoints: settings.maxGoldSlPoints ?? 85,
-        minRr: settings.minTp1RR,
+        contractSizeOz: liveMt5Specs?.contractSizeOz ?? settings.contractSizeOz,
+        minimumLot: liveMt5Specs?.minimumLot ?? settings.minimumLot,
+        maximumLot: liveMt5Specs?.maximumLot ?? settings.maximumLot,
+        lotStep: liveMt5Specs?.lotStep ?? settings.lotStep,
+        minGoldSlPoints: settings.minGoldSlPoints ?? liveMt5Specs?.minGoldSlPoints ?? 35,
+        maxGoldSlPoints: settings.maxGoldSlPoints ?? liveMt5Specs?.maxGoldSlPoints ?? 85,
+        minRr: settings.minTp1RR ?? liveMt5Specs?.minRr ?? 1.5,
         maxLoss: settings.maxLoss,
       };
       this.config.minConfidence = settings.minimumConfidence;
@@ -1389,76 +1396,39 @@ class LiveMarketScanner {
           return false;
         });
 
-        // Auto-Trading execution bridge if enabled in settings
-        const currentSettings = storage.getSettings();
-        if (currentSettings.autoTradingEnabled) {
-          console.log(`[LiveMarketScanner] Auto-trading is ENABLED. Routing order to MT5 Bridge (Mode: ${currentSettings.accountMode || 'DEMO'})...`);
+        // Auto-Trading execution bridge if enabled in settings and verified in mt5Bridge
+        if (mt5Bridge.isDemoAutoTradingActive()) {
+          console.log(`[LiveMarketScanner] Demo Auto-Trading is ACTIVE. Routing order to MT5 Demo Bridge Queue...`);
           try {
-            const todayStats = storage.getTodayStats();
-            const orderRiskPct = signal.riskPercent || 15;
-            if (todayStats.tradesCount < 3 && (todayStats.totalRiskPercentUsed + orderRiskPct) <= 30.0) {
-              const lot = signal.standardLot ?? signal.recommendedLotSize ?? 0.01;
-              let resolvedAction: 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT';
-              const sUpper = signal.signal.toUpperCase();
-              if (sUpper.includes('BUY LIMIT')) resolvedAction = 'BUY_LIMIT';
-              else if (sUpper.includes('SELL LIMIT')) resolvedAction = 'SELL_LIMIT';
-              else if (sUpper.includes('BUY')) resolvedAction = 'BUY';
-              else if (sUpper.includes('SELL')) resolvedAction = 'SELL';
-              else resolvedAction = signal.entry > signal.stopLoss ? 'BUY' : 'SELL';
+            const lot = signal.standardLot ?? signal.recommendedLotSize ?? 0.01;
+            let resolvedAction: 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT';
+            const sUpper = signal.signal.toUpperCase();
+            if (sUpper.includes('BUY LIMIT')) resolvedAction = 'BUY_LIMIT';
+            else if (sUpper.includes('SELL LIMIT')) resolvedAction = 'SELL_LIMIT';
+            else if (sUpper.includes('BUY')) resolvedAction = 'BUY';
+            else if (sUpper.includes('SELL')) resolvedAction = 'SELL';
+            else resolvedAction = signal.entry > signal.stopLoss ? 'BUY' : 'SELL';
 
-              mt5Bridge.executeOrder({
-                symbol: (signal.asset || 'XAUUSD').replace('/', ''),
-                action: resolvedAction,
-                lot: lot,
-                price: signal.entry,
-                stopLoss: signal.stopLoss,
-                takeProfit: signal.tp1,
-                takeProfit2: signal.tp2,
-                comment: `AutoTrade ${currentSettings.accountMode || 'DEMO'}`,
-                accountMode: currentSettings.accountMode || 'DEMO',
-              }).then((bridgeRes) => {
-                if (bridgeRes.success) {
-                  const autoTradeId = bridgeRes.orderId || `autotrade_${Date.now()}`;
-                  storage.saveTrade({
-                    id: signal.id,
-                    tradeNumber: (storage.getTrades(1)[0]?.tradeNumber || 0) + 1,
-                    date: new Date().toLocaleDateString('ar-EG', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    }),
-                    isoTime: new Date().toISOString(),
-                    asset: 'XAU/USD',
-                    direction: signal.signal as any,
-                    entry: bridgeRes.executionPrice || signal.entry,
-                    sl: signal.stopLoss,
-                    slPoints: signal.slPoints,
-                    tp1: signal.tp1,
-                    tp1Points: signal.tp1Points || 0,
-                    tp2: signal.tp2,
-                    tp2Points: signal.tp2Points || 0,
-                    rr: signal.rr,
-                    riskPercent: orderRiskPct,
-                    riskAmount: signal.riskAmount,
-                    lotSize: lot,
-                    confidence: signal.confidence,
-                    setup: signal.setup,
-                    result: 'OPEN',
-                    pl: 0,
-                    balanceAfterTrade: currentSettings.manualCapital,
-                    notes: `Auto-Executed via MT5 Bridge [Mode: ${currentSettings.accountMode || 'DEMO'}] - Status: ${bridgeRes.status}`,
-                  });
-                  console.log(`[LiveMarketScanner] Auto-trade executed successfully: ${autoTradeId}`);
-                } else {
-                  console.warn(`[LiveMarketScanner] Auto-trade execution failed: ${bridgeRes.message}`);
-                }
-              }).catch((e) => console.error('[LiveMarketScanner] Auto-trade execution error:', e));
+            const queueRes = mt5Bridge.queueDemoOrder({
+              commandId: `cmd_${signal.id}`,
+              signalId: signal.id,
+              action: resolvedAction,
+              symbol: (signal.asset || 'XAUUSD').replace('/', ''),
+              volume: lot,
+              price: signal.entry,
+              sl: signal.stopLoss,
+              tp: signal.tp1,
+              tp2: signal.tp2,
+              comment: `GB-V5 ${signal.setup.substring(0, 16)}`,
+            });
+
+            if (queueRes.success) {
+              console.log(`[LiveMarketScanner] Trade command queued for MT5 Demo: ${queueRes.commandId}`);
             } else {
-              console.warn('[LiveMarketScanner] Auto-trade blocked by daily trade limit or risk limit.');
+              console.warn(`[LiveMarketScanner] MT5 Demo trade queue rejected: ${queueRes.reason}`);
             }
           } catch (autoErr) {
-            console.error('[LiveMarketScanner] Error in auto-trading dispatch:', autoErr);
+            console.error('[LiveMarketScanner] Auto-trading queue error:', autoErr);
           }
         }
 

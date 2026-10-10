@@ -1561,6 +1561,18 @@ ${message.text}
   }
 
   /**
+   * Send high-priority system alerts (e.g. MT5 Bridge, Kill-Switch)
+   */
+  public async sendSystemAlert(text: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      return await this.sendMessage(text);
+    } catch (err: any) {
+      console.warn('[Telegram] sendSystemAlert suppressed error:', err?.message);
+      return { success: false, error: err?.message };
+    }
+  }
+
+  /**
    * Get the current registration status
    */
   public getStatus(): TelegramStatus {
