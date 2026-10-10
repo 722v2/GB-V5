@@ -113,8 +113,17 @@ function createSupabaseClientInstance(): SupabaseClient | null {
   }
 }
 
+export type SupabaseStatus = 'NOT_CONFIGURED' | 'INITIALIZING' | 'CONNECTED' | 'DEGRADED';
+
 // Runtime cached instance
 let runtimeSupabaseInstance: SupabaseClient | null = createSupabaseClientInstance();
+let connectionStatus: SupabaseStatus = runtimeSupabaseInstance ? 'INITIALIZING' : 'NOT_CONFIGURED';
+let lastSuccessfulQueryTime: number | null = null;
+let lastFailureTime: number | null = null;
+let lastFailureError: string | null = null;
+let totalSuccessfulQueries = 0;
+let totalFailedQueries = 0;
+let verifiedConnection = false;
 
 if (!runtimeSupabaseInstance) {
   console.log(
@@ -170,9 +179,15 @@ export function isSupabaseAvailable(): boolean {
 }
 
 /**
- * Called when a Supabase operation succeeds to reset failure counters and backoff state
+ * Called when a Supabase operation succeeds to reset failure counters and mark connection active
  */
 export function recordSupabaseSuccess(): void {
+  connectionStatus = 'CONNECTED';
+  verifiedConnection = true;
+  totalSuccessfulQueries++;
+  lastSuccessfulQueryTime = Date.now();
+  lastFailureError = null;
+
   if (consecutiveNetworkFailures > 0 || supabaseBackoffUntil > 0) {
     console.log('[Supabase] Connection verified successfully. Cloud database synchronization active.');
   }
@@ -185,6 +200,11 @@ export function recordSupabaseSuccess(): void {
  * Called when a Supabase operation fails. If it is a transport-level failure, triggers exponential backoff.
  */
 export function recordSupabaseError(err: any, context?: string): void {
+  connectionStatus = 'DEGRADED';
+  totalFailedQueries++;
+  lastFailureTime = Date.now();
+  lastFailureError = String(err?.message || err);
+
   if (!isSupabaseTransportError(err)) {
     // Normal database/query error (e.g. 400 Bad Request, schema mismatch) - log without triggering network backoff
     const ctx = context ? ` [${context}]` : '';
@@ -225,12 +245,11 @@ export async function executeSupabaseQuery<T = any>(
   try {
     const res = await queryFn(client);
     if (res && res.error) {
-      if (isSupabaseTransportError(res.error)) {
-        recordSupabaseError(res.error, context);
-        return null;
-      }
-      if (context) {
-        console.warn(`[Supabase Error] [${context}]:`, res.error?.message || res.error);
+      recordSupabaseError(res.error, context);
+      if (!isSupabaseTransportError(res.error)) {
+        if (context) {
+          console.warn(`[Supabase Error] [${context}]:`, res.error?.message || res.error);
+        }
       }
       return res;
     }
@@ -243,17 +262,91 @@ export async function executeSupabaseQuery<T = any>(
 }
 
 export function isSupabaseConfigured(): boolean {
-  if (!runtimeSupabaseInstance) {
+  if (runtimeSupabaseInstance === null && getSupabaseCredentials() !== null) {
     runtimeSupabaseInstance = createSupabaseClientInstance();
+    if (runtimeSupabaseInstance && connectionStatus === 'NOT_CONFIGURED') {
+      connectionStatus = 'INITIALIZING';
+    }
   }
   return runtimeSupabaseInstance !== null;
 }
 
 export function getSupabaseClient(): SupabaseClient | null {
-  if (!runtimeSupabaseInstance) {
+  if (runtimeSupabaseInstance === null && getSupabaseCredentials() !== null) {
     runtimeSupabaseInstance = createSupabaseClientInstance();
   }
   return runtimeSupabaseInstance;
+}
+
+/**
+ * Returns the exact connection state: 'NOT_CONFIGURED' | 'INITIALIZING' | 'CONNECTED' | 'DEGRADED'
+ * Crucial rule: Never report CONNECTED unless a real query has verified connectivity.
+ */
+export function getSupabaseStatus(): SupabaseStatus {
+  if (!isSupabaseConfigured()) {
+    return 'NOT_CONFIGURED';
+  }
+  if (consecutiveNetworkFailures > 0 || Date.now() < supabaseBackoffUntil) {
+    return 'DEGRADED';
+  }
+  if (verifiedConnection && connectionStatus === 'CONNECTED') {
+    return 'CONNECTED';
+  }
+  // Configured with credentials but not yet verified against live database
+  return connectionStatus === 'INITIALIZING' ? 'INITIALIZING' : 'DEGRADED';
+}
+
+/**
+ * Diagnostic status object
+ */
+export function getSupabaseDiagnostics() {
+  const configured = isSupabaseConfigured();
+  const status = getSupabaseStatus();
+  return {
+    status,
+    configured,
+    isAvailable: isSupabaseAvailable(),
+    verifiedConnection,
+    totalSuccessfulQueries,
+    totalFailedQueries,
+    lastSuccessfulQueryTime,
+    lastFailureTime,
+    lastFailureError,
+    keyRole: getSupabaseCredentials()?.keyRole || 'unknown',
+  };
+}
+
+/**
+ * Test helpers for mock injection
+ */
+export function setSupabaseClientForTesting(mockClient: SupabaseClient | null, status?: SupabaseStatus): void {
+  runtimeSupabaseInstance = mockClient;
+  if (status) {
+    connectionStatus = status;
+    verifiedConnection = status === 'CONNECTED';
+  } else if (!mockClient) {
+    connectionStatus = 'NOT_CONFIGURED';
+    verifiedConnection = false;
+  } else {
+    connectionStatus = 'INITIALIZING';
+    verifiedConnection = false;
+  }
+  consecutiveNetworkFailures = 0;
+  supabaseBackoffUntil = 0;
+}
+
+export function resetSupabaseStateForTesting(): void {
+  runtimeSupabaseInstance = createSupabaseClientInstance();
+  connectionStatus = runtimeSupabaseInstance ? 'INITIALIZING' : 'NOT_CONFIGURED';
+  verifiedConnection = false;
+  lastSuccessfulQueryTime = null;
+  lastFailureTime = null;
+  lastFailureError = null;
+  totalSuccessfulQueries = 0;
+  totalFailedQueries = 0;
+  consecutiveNetworkFailures = 0;
+  supabaseBackoffUntil = 0;
+  hasLoggedBackoff = false;
 }
 
 // Export the real SupabaseClient instance or null when unconfigured

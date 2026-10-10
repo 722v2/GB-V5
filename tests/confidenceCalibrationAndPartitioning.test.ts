@@ -48,7 +48,11 @@ function runAll() {
   console.log('RUNNING FORENSIC CONFIDENCE CALIBRATION & STORAGE PARTITIONING TESTS');
   console.log('====================================================\n');
 
-  // Test 1: Synthetic test trade identification
+  const wasTesting = storage.isTestingMode();
+  storage.setTestingMode(true);
+
+  try {
+    // Test 1: Synthetic test trade identification
   console.log('Test 1: Identifies synthetic test trades and isolates them from production storage');
   if (!isSyntheticTestRecord({ id: 'test-123' })) throw new Error('Failed to identify test- prefix');
   if (!isSyntheticTestRecord({ id: 'trade_single_b7_123' })) throw new Error('Failed to identify trade_single_ prefix');
@@ -131,9 +135,12 @@ function runAll() {
     console.log('✔ PASS: Test 3: Strategy engine evaluated cleanly without unhandled errors\n');
   }
 
-  console.log('====================================================');
-  console.log('ALL CONFIDENCE CALIBRATION & PARTITIONING TESTS PASSED (3/3)');
-  console.log('====================================================');
+    console.log('====================================================');
+    console.log('ALL CONFIDENCE CALIBRATION & PARTITIONING TESTS PASSED (3/3)');
+    console.log('====================================================');
+  } finally {
+    storage.setTestingMode(wasTesting);
+  }
 }
 
 runAll();

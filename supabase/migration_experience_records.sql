@@ -3,6 +3,8 @@
 -- Purpose: Required for Experience Memory Engine persistence
 -- =============================================================================
 
+BEGIN;
+
 CREATE TABLE IF NOT EXISTS public.experience_records (
   id TEXT PRIMARY KEY,
   signal_id TEXT NOT NULL,
@@ -28,5 +30,10 @@ CREATE INDEX IF NOT EXISTS idx_experience_records_setup_family ON public.experie
 -- Security: Enable Row-Level Security
 ALTER TABLE public.experience_records ENABLE ROW LEVEL SECURITY;
 
--- Permissions: Grant access to service_role
+-- Revoke all access from untrusted client roles
+REVOKE ALL ON TABLE public.experience_records FROM anon, authenticated;
+
+-- Permissions: Grant access exclusively to service_role
 GRANT ALL ON TABLE public.experience_records TO service_role;
+
+COMMIT;

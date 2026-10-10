@@ -26,7 +26,16 @@ async function runMT5BridgeRegressionTests() {
   console.log('🧪 RUNNING GB-V5 MT5 BRIDGE & DEMO AUTO-TRADING REGRESSION SUITE');
   console.log('========================================================================\n');
 
-  // TEST 1: Disconnected state by default
+  await storage.waitUntilReady();
+  const wasTesting = storage.isTestingMode();
+  const initialTradesSnapshot = [...storage.getTrades(500)];
+  const initialOutcomesSnapshot = [...storage.getTradeOutcomes(500)];
+  const initialBalanceSnapshot = storage.getCurrentBalance();
+  const initialStartingBalanceSnapshot = storage.getStartingBalance();
+  storage.setTestingMode(true);
+
+  try {
+    // TEST 1: Disconnected state by default
   console.log('TEST 1: Initial state is disconnected with auto-trading disabled');
   assert.strictEqual(mt5Bridge.isAvailable(), false, 'Bridge should be unavailable before connection');
   assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'Auto-trading should be inactive initially');
@@ -359,9 +368,18 @@ async function runMT5BridgeRegressionTests() {
   assert(Array.isArray(datasetResult.candles1h), 'candles1h array must be present');
   console.log('✅ [PASS] TEST 15: Historical M1 candles verified in backtest data pipeline.\n');
 
-  console.log('========================================================================');
-  console.log('🎉 ALL 15 MT5 BRIDGE & DEMO AUTO-TRADING REGRESSION TESTS PASSED (15/15)!');
-  console.log('========================================================================');
+    console.log('========================================================================');
+    console.log('🎉 ALL 15 MT5 BRIDGE & DEMO AUTO-TRADING REGRESSION TESTS PASSED (15/15)!');
+    console.log('========================================================================');
+  } finally {
+    storage.restoreTestSnapshot(
+      initialTradesSnapshot,
+      initialOutcomesSnapshot,
+      initialBalanceSnapshot,
+      initialStartingBalanceSnapshot
+    );
+    storage.setTestingMode(wasTesting);
+  }
 }
 
 runMT5BridgeRegressionTests().catch((err) => {

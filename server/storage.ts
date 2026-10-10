@@ -6,6 +6,8 @@ import {
   getSupabaseClient,
   isSupabaseAvailable,
   executeSupabaseQuery,
+  getSupabaseStatus,
+  getSupabaseDiagnostics,
 } from './supabase.js';
 import { telegramService } from './telegram.js';
 
@@ -200,9 +202,9 @@ export class PersistentStorage {
   private inMemoryExperienceRecords: any[] = [];
   private outcomeListeners: Array<(record: TradeOutcomeRecord, trade?: TradeLedgerItem) => void> = [];
 
-  // CRITICAL REQUIREMENT 4: Starting balance $25.00, preserved current balance $91.00
-  private inMemoryStartingBalance = 25.0;
-  private inMemoryCurrentBalance = 91.0;
+  // Dynamic account baseline (initialized from persistent account_state / app_settings / local backups)
+  private inMemoryStartingBalance = DEFAULT_APP_SETTINGS.manualCapital || 25.0;
+  private inMemoryCurrentBalance = DEFAULT_APP_SETTINGS.manualCapital || 25.0;
 
   private inMemorySettings: AppSettings = {
     ...DEFAULT_APP_SETTINGS,
@@ -494,13 +496,15 @@ export class PersistentStorage {
           this.inMemoryStartingBalance = startBal;
         }
       } else if (res && !res.data && !res.error) {
-        // Table exists but record does not: Seed with preserved balance
+        // Table exists but record does not: Initialize with current live account state & settings
+        const initialStarting = this.inMemoryStartingBalance || this.inMemorySettings.manualCapital || 25.0;
+        const initialCurrent = this.inMemoryCurrentBalance || initialStarting;
         await executeSupabaseQuery(
           (c) =>
             c.from('account_state').upsert({
               id: 'main',
-              starting_balance: this.inMemoryStartingBalance,
-              current_balance: this.inMemoryCurrentBalance,
+              starting_balance: initialStarting,
+              current_balance: initialCurrent,
               updated_at: new Date().toISOString(),
             }),
           'initSupabaseData:seed_account_state'
@@ -787,6 +791,57 @@ export class PersistentStorage {
               }),
             'initSupabaseData:seed_experience_record'
           );
+        }
+      }
+    } catch (e: any) {
+      // Non-blocking
+    }
+
+    // 11. POI Records
+    try {
+      if (!isSupabaseAvailable()) return;
+      const res = await executeSupabaseQuery(
+        (c) => c.from('poi_records').select('*').limit(200),
+        'initSupabaseData:poi_records'
+      );
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        for (const r of res.data) {
+          const poi = r.raw_data || r;
+          if (poi && poi.id && !this.inMemoryPois.some((p) => p.id === poi.id)) {
+            this.inMemoryPois.push(poi);
+          }
+        }
+        if (this.inMemoryPois.length > 200) {
+          this.inMemoryPois = this.inMemoryPois.slice(-200);
+        }
+      } else if (res && res.data?.length === 0 && this.inMemoryPois.length > 0) {
+        for (const p of this.inMemoryPois) {
+          if (!isSupabaseAvailable()) break;
+          await executeSupabaseQuery((c) => c.from('poi_records').upsert({ id: p.id, raw_data: p }), 'initSupabaseData:seed_poi');
+        }
+      }
+    } catch (e: any) {
+      // Non-blocking
+    }
+
+    // 12. Candidate Lifecycles
+    try {
+      if (!isSupabaseAvailable()) return;
+      const res = await executeSupabaseQuery(
+        (c) => c.from('candidate_lifecycles').select('*').limit(200),
+        'initSupabaseData:candidate_lifecycles'
+      );
+      if (res && Array.isArray(res.data) && res.data.length > 0) {
+        for (const r of res.data) {
+          const lc = r.raw_data || r;
+          if (lc && lc.id && !this.inMemoryLifecycles.some((l) => l.id === lc.id)) {
+            this.inMemoryLifecycles.push(lc);
+          }
+        }
+      } else if (res && res.data?.length === 0 && this.inMemoryLifecycles.length > 0) {
+        for (const lc of this.inMemoryLifecycles) {
+          if (!isSupabaseAvailable()) break;
+          await executeSupabaseQuery((c) => c.from('candidate_lifecycles').upsert({ id: lc.id, raw_data: lc }), 'initSupabaseData:seed_lifecycle');
         }
       }
     } catch (e: any) {
@@ -2252,22 +2307,27 @@ export class PersistentStorage {
 
   public getStats() {
     const supabaseConfigured = isSupabaseConfigured();
-    const supabaseAvailable = isSupabaseAvailable();
+    const status = getSupabaseStatus();
+    const isDurable = status === 'CONNECTED';
+    const persistenceMode: 'DURABLE_SUPABASE' | 'LOCAL_FALLBACK' = isDurable ? 'DURABLE_SUPABASE' : 'LOCAL_FALLBACK';
+
     return {
       totalScansRecorded: this.inMemoryScans.length,
       totalSignalsRecorded: this.inMemorySignals.length,
       totalTradesRecorded: this.inMemoryTrades.length,
       totalOutcomesRecorded: this.inMemoryOutcomes.length,
-      storageEngine: supabaseConfigured ? 'Supabase PostgreSQL (Durable Cloud Storage)' : 'Ephemeral Local Disk Backup',
-      durablePersistence: supabaseConfigured && supabaseAvailable,
-      supabaseStatus: !supabaseConfigured
-        ? 'UNCONFIGURED'
-        : supabaseAvailable
-        ? 'CONNECTED'
-        : 'DEGRADED_BACKOFF',
+      storageEngine: isDurable
+        ? 'Supabase PostgreSQL (Durable Cloud Storage)'
+        : 'Ephemeral Local Disk Backup (LOCAL_FALLBACK)',
+      persistenceMode,
+      durablePersistence: isDurable,
+      supabaseStatus: status,
       persistenceWarning: !supabaseConfigured
         ? 'DEPLOYMENT BLOCKER: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are not configured. On Render Free, container disk is ephemeral and state will reset on restart/sleep.'
+        : status === 'DEGRADED'
+        ? 'PERSISTENCE DEGRADED: Supabase queries are failing. Operating in LOCAL_FALLBACK mode until database connectivity recovers.'
         : undefined,
+      diagnostics: getSupabaseDiagnostics(),
       isInitialized: this.isReady,
     };
   }

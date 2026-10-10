@@ -1,25 +1,27 @@
 -- =============================================================================
 -- Supabase PostgreSQL Database Schema
--- Scalping Trade Automation & Persistence Layer
+-- Scalping Trade Automation & Persistence Layer (GB-V5)
 -- =============================================================================
 
+BEGIN;
+
 -- 1. App Settings Table
-CREATE TABLE IF NOT EXISTS app_settings (
+CREATE TABLE IF NOT EXISTS public.app_settings (
   id TEXT PRIMARY KEY DEFAULT 'main',
   data JSONB NOT NULL,
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
--- 2. Account Balance State Table (Critical: Balance $91.00)
-CREATE TABLE IF NOT EXISTS account_state (
+-- 2. Account Balance State Table (Canonical GB-V5 account baseline tracking)
+CREATE TABLE IF NOT EXISTS public.account_state (
   id TEXT PRIMARY KEY DEFAULT 'main',
   starting_balance NUMERIC(12, 2) NOT NULL DEFAULT 25.00,
-  current_balance NUMERIC(12, 2) NOT NULL DEFAULT 91.00,
+  current_balance NUMERIC(12, 2) NOT NULL DEFAULT 25.00,
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- 3. Trade Ledger Table
-CREATE TABLE IF NOT EXISTS trade_ledger (
+CREATE TABLE IF NOT EXISTS public.trade_ledger (
   id TEXT PRIMARY KEY,
   trade_number INTEGER,
   date TEXT,
@@ -46,7 +48,7 @@ CREATE TABLE IF NOT EXISTS trade_ledger (
   balance_after_trade NUMERIC(12, 2),
   exit_price NUMERIC(12, 2),
   exit_time TEXT,
-  closed_at BIGINT,
+  closed_at BIGINT, -- Epoch milliseconds
   close_reason TEXT,
   source TEXT DEFAULT 'MANUAL',
   broker_deal_id TEXT,
@@ -61,13 +63,15 @@ CREATE TABLE IF NOT EXISTS trade_ledger (
   updated_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_trade_ledger_trade_number ON trade_ledger(trade_number DESC);
-CREATE INDEX IF NOT EXISTS idx_trade_ledger_result ON trade_ledger(result);
-CREATE INDEX IF NOT EXISTS idx_trade_ledger_is_active ON trade_ledger(is_active);
-CREATE INDEX IF NOT EXISTS idx_trade_ledger_closed_at ON trade_ledger(closed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_trade_number ON public.trade_ledger(trade_number DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_result ON public.trade_ledger(result);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_is_active ON public.trade_ledger(is_active);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_closed_at ON public.trade_ledger(closed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_broker_deal_id ON public.trade_ledger(broker_deal_id);
+CREATE INDEX IF NOT EXISTS idx_trade_ledger_signal_id ON public.trade_ledger(signal_id);
 
--- 4. Trade Outcomes Table (Telegram & Manual Resolutions)
-CREATE TABLE IF NOT EXISTS trade_outcomes (
+-- 4. Trade Outcomes Table (Telegram, Manual & Broker Resolutions)
+CREATE TABLE IF NOT EXISTS public.trade_outcomes (
   signal_id TEXT PRIMARY KEY,
   trade_id TEXT,
   direction TEXT,
@@ -77,7 +81,7 @@ CREATE TABLE IF NOT EXISTS trade_outcomes (
   tp1 NUMERIC(12, 2),
   tp2 NUMERIC(12, 2),
   outcome TEXT,
-  timestamp BIGINT,
+  timestamp BIGINT, -- Epoch milliseconds
   iso_time TEXT,
   chat_id TEXT,
   user_id TEXT,
@@ -87,49 +91,51 @@ CREATE TABLE IF NOT EXISTS trade_outcomes (
   source TEXT,
   broker_deal_id TEXT,
   broker_order_id TEXT,
-  closed_at BIGINT,
+  closed_at BIGINT, -- Epoch milliseconds
   close_reason TEXT,
   notes TEXT,
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_trade_outcomes_timestamp ON trade_outcomes(timestamp DESC);
-CREATE INDEX IF NOT EXISTS idx_trade_outcomes_outcome ON trade_outcomes(outcome);
+CREATE INDEX IF NOT EXISTS idx_trade_outcomes_timestamp ON public.trade_outcomes(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_outcomes_outcome ON public.trade_outcomes(outcome);
+CREATE INDEX IF NOT EXISTS idx_trade_outcomes_trade_id ON public.trade_outcomes(trade_id);
+CREATE INDEX IF NOT EXISTS idx_trade_outcomes_broker_deal_id ON public.trade_outcomes(broker_deal_id);
 
 -- 5. Signals Table
-CREATE TABLE IF NOT EXISTS signals (
+CREATE TABLE IF NOT EXISTS public.signals (
   id TEXT PRIMARY KEY,
-  timestamp BIGINT,
+  timestamp BIGINT, -- Epoch milliseconds
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON signals(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_signals_timestamp ON public.signals(timestamp DESC);
 
 -- 6. Scans Table
-CREATE TABLE IF NOT EXISTS scans (
+CREATE TABLE IF NOT EXISTS public.scans (
   id TEXT PRIMARY KEY,
-  timestamp BIGINT,
+  timestamp BIGINT, -- Epoch milliseconds
   status TEXT,
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_scans_timestamp ON scans(timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_scans_timestamp ON public.scans(timestamp DESC);
 
 -- 7. Opportunities Table
-CREATE TABLE IF NOT EXISTS opportunities (
+CREATE TABLE IF NOT EXISTS public.opportunities (
   id TEXT PRIMARY KEY,
-  last_updated_time BIGINT,
+  last_updated_time BIGINT, -- Epoch milliseconds
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_opportunities_last_updated ON opportunities(last_updated_time DESC);
+CREATE INDEX IF NOT EXISTS idx_opportunities_last_updated ON public.opportunities(last_updated_time DESC);
 
 -- 8. Telegram Bot Configuration
-CREATE TABLE IF NOT EXISTS telegram_config (
+CREATE TABLE IF NOT EXISTS public.telegram_config (
   id TEXT PRIMARY KEY DEFAULT 'main',
   chat_id TEXT NOT NULL,
   registered_at TEXT,
@@ -137,28 +143,30 @@ CREATE TABLE IF NOT EXISTS telegram_config (
 );
 
 -- 9. Candidate Lifecycles
-CREATE TABLE IF NOT EXISTS candidate_lifecycles (
+CREATE TABLE IF NOT EXISTS public.candidate_lifecycles (
   id TEXT PRIMARY KEY,
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- 10. POI Records
-CREATE TABLE IF NOT EXISTS poi_records (
+CREATE TABLE IF NOT EXISTS public.poi_records (
   id TEXT PRIMARY KEY,
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
 -- 11. Terminal Setups (Cooldown & Invalidation Dedup)
-CREATE TABLE IF NOT EXISTS terminal_setups (
+CREATE TABLE IF NOT EXISTS public.terminal_setups (
   id TEXT PRIMARY KEY,
   setup_key TEXT NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
+CREATE INDEX IF NOT EXISTS idx_terminal_setups_key ON public.terminal_setups(setup_key);
+
 -- 12. Experience Records Table (Experience Memory Engine)
-CREATE TABLE IF NOT EXISTS experience_records (
+CREATE TABLE IF NOT EXISTS public.experience_records (
   id TEXT PRIMARY KEY,
   signal_id TEXT NOT NULL,
   trade_id TEXT,
@@ -169,52 +177,58 @@ CREATE TABLE IF NOT EXISTS experience_records (
   outcome TEXT NOT NULL,
   realized_pnl NUMERIC(12, 2) NOT NULL DEFAULT 0,
   rr NUMERIC(8, 2),
-  completed_at BIGINT NOT NULL,
+  completed_at BIGINT NOT NULL, -- Epoch milliseconds
   raw_data JSONB NOT NULL,
   created_at TIMESTAMPTZ DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_experience_records_completed_at ON experience_records(completed_at DESC);
-CREATE INDEX IF NOT EXISTS idx_experience_records_combination_key ON experience_records(combination_key);
-CREATE INDEX IF NOT EXISTS idx_experience_records_signal_id ON experience_records(signal_id);
-CREATE INDEX IF NOT EXISTS idx_experience_records_setup_family ON experience_records(setup_family);
+CREATE INDEX IF NOT EXISTS idx_experience_records_completed_at ON public.experience_records(completed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_experience_records_combination_key ON public.experience_records(combination_key);
+CREATE INDEX IF NOT EXISTS idx_experience_records_signal_id ON public.experience_records(signal_id);
+CREATE INDEX IF NOT EXISTS idx_experience_records_setup_family ON public.experience_records(setup_family);
 
--- Seed Account State with exactly $91.00 current balance if not already present
-INSERT INTO account_state (id, starting_balance, current_balance, updated_at)
-VALUES ('main', 25.00, 91.00, NOW())
+-- Seed Account State with canonical baseline starting balance ONLY if no record exists yet.
+-- ON CONFLICT (id) DO NOTHING ensures existing balance is NEVER overwritten.
+-- When the application connects, initSupabaseData() synchronizes the live/configured account state.
+INSERT INTO public.account_state (id, starting_balance, current_balance, updated_at)
+VALUES ('main', 25.00, 25.00, NOW())
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================================
 -- Security, Permissions & Row-Level Security (RLS) Configuration
 -- =============================================================================
 
--- Grant schema usage to the privileged backend service role
-GRANT USAGE ON SCHEMA public TO service_role;
+-- Enable Row-Level Security (RLS) on all persistent tables
+ALTER TABLE public.app_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.account_state ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trade_ledger ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.trade_outcomes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.signals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.scans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.opportunities ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.telegram_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidate_lifecycles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.poi_records ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.terminal_setups ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.experience_records ENABLE ROW LEVEL SECURITY;
 
--- Grant table & sequence privileges to service_role
+-- Explicitly revoke all access from untrusted client roles (anon, authenticated).
+-- Public PostgREST API access is completely blocked.
+REVOKE ALL ON ALL TABLES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM anon, authenticated;
+REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM anon, authenticated;
+
+-- Grant full schema and table privileges exclusively to the backend service_role.
+-- Note: The service_role key has the PostgreSQL BYPASSRLS attribute,
+-- allowing the trusted server backend full read/write access.
+GRANT USAGE ON SCHEMA public TO service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
--- Ensure future created tables also inherit proper privileges for service_role
+-- Ensure any future tables also default to service_role-only access
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO service_role;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO service_role;
 
--- Enable Row-Level Security (RLS) on all persistent tables
-ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE account_state ENABLE ROW LEVEL SECURITY;
-ALTER TABLE trade_ledger ENABLE ROW LEVEL SECURITY;
-ALTER TABLE trade_outcomes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE signals ENABLE ROW LEVEL SECURITY;
-ALTER TABLE scans ENABLE ROW LEVEL SECURITY;
-ALTER TABLE opportunities ENABLE ROW LEVEL SECURITY;
-ALTER TABLE telegram_config ENABLE ROW LEVEL SECURITY;
-ALTER TABLE candidate_lifecycles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE poi_records ENABLE ROW LEVEL SECURITY;
-ALTER TABLE terminal_setups ENABLE ROW LEVEL SECURITY;
-ALTER TABLE experience_records ENABLE ROW LEVEL SECURITY;
-
--- Note: The service_role key has the PostgreSQL BYPASSRLS attribute,
--- allowing the backend full read/write access while external unauthenticated
--- requests without the service_role key remain blocked by RLS.
+COMMIT;
 
 
