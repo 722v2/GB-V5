@@ -384,6 +384,10 @@ class WindowsMT5BridgeClient:
             return
 
         logger.info("Extracting historical candles from MT5 for backtesting...")
+        
+        sel_ok = mt5.symbol_select(self.resolved_symbol, True)
+        logger.info(f"symbol_select('{self.resolved_symbol}', True) returned {sel_ok}")
+
         tf_configs = [
             ("M1", mt5.TIMEFRAME_M1, 3000),
             ("M5", mt5.TIMEFRAME_M5, 3000),
@@ -392,8 +396,19 @@ class WindowsMT5BridgeClient:
         ]
 
         for tf_name, tf_const, count in tf_configs:
-            rates = mt5.copy_rates_from_pos(self.resolved_symbol, tf_const, 0, count)
-            if rates is not None and len(rates) > 0:
+            try:
+                logger.info(f"Requesting {count} {tf_name} historical candles for symbol {self.resolved_symbol}...")
+                start_time = time.time()
+                rates = mt5.copy_rates_from_pos(self.resolved_symbol, tf_const, 0, count)
+                elapsed = time.time() - start_time
+                ret_count = len(rates) if rates is not None else 0
+                last_err = mt5.last_error()
+                logger.info(f"copy_rates_from_pos({self.resolved_symbol}, {tf_name}, count={count}) took {elapsed:.2f}s, returned {ret_count} bars (last_error={last_err})")
+
+                if rates is None or len(rates) == 0:
+                    logger.warning(f"No rate data returned for {self.resolved_symbol} ({tf_name}). last_error={last_err}")
+                    continue
+
                 candles = []
                 for r in rates:
                     candles.append({
@@ -410,8 +425,13 @@ class WindowsMT5BridgeClient:
                     res = self.session.post(url, json={"timeframe": tf_name, "candles": candles}, timeout=10)
                     if res.status_code == 200:
                         logger.info(f"Synced {len(candles)} {tf_name} historical candles to Render.")
+                    else:
+                        body_trunc = res.text[:200] if res.text else ""
+                        logger.warning(f"Failed to sync {tf_name} candles: HTTP {res.status_code} - {body_trunc}")
                 except Exception as e:
-                    logger.debug(f"Failed to sync {tf_name} candles: {e}")
+                    logger.warning(f"Network error syncing {tf_name} candles: {e}")
+            except Exception as e:
+                logger.error(f"Unexpected error extracting/syncing {tf_name} candles: {e}")
 
         self.candles_synced = True
 
