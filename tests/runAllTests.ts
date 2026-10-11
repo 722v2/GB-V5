@@ -20,6 +20,8 @@ const testFiles = [
   'tests/confidenceCalibrationAndPartitioning.test.ts',
   'tests/s12S10S8PrecisionRegression.test.ts',
   'tests/adminAndRouteSecurity.test.ts',
+  'tests/backtestCircularSerializationRegression.test.ts',
+  'tests/manualScanTriggerRegression.test.ts',
 ];
 
 console.log('====================================================');

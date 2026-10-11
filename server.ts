@@ -915,10 +915,12 @@ async function startServer() {
       if (balance !== undefined) {
         scanner.setAccountContext(Number(balance), Number(losingStreak) || 0, brokerSpecs);
       }
-      const signal = await scanner.triggerManualScan(Boolean(force));
+      const forceScan = force === undefined ? true : Boolean(force);
+      const signal = await scanner.triggerManualScan(forceScan);
       res.json({ success: true, signal, config: scanner.getConfig() });
     } catch (error: any) {
-      res.status(500).json({ success: false, error: error.message });
+      console.error('[API /api/scanner/scan-now] Manual scan error:', error);
+      res.status(500).json({ success: false, error: error.message || 'فشل تشغيل الماسح المباشر' });
     }
   });
 

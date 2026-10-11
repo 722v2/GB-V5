@@ -531,6 +531,7 @@ export default function App() {
 
   // Immediate Manual Scan
   const handleManualScan = async () => {
+    if (isAnalyzing) return;
     setIsAnalyzing(true);
     try {
       const res = await fetch('/api/scanner/scan-now', {
@@ -540,9 +541,11 @@ export default function App() {
           balance: currentBalance,
           losingStreak: stats.losingStreak,
           brokerSpecs: brokerSettings,
+          force: true,
         }),
       });
-      const data = await res.json();
+
+      const data = await res.json().catch(() => ({ success: false, error: `Server error (HTTP ${res.status})` }));
       if (data.success) {
         if (data.signal) {
           setSignal(data.signal);
@@ -550,12 +553,18 @@ export default function App() {
         if (data.config) {
           setScannerConfig(data.config);
         }
-        fetchCandleData(asset);
-        fetchPrice(asset);
-        fetchMultitimeframe();
+        await Promise.all([
+          fetchCandleData(asset),
+          fetchPrice(asset),
+          fetchMultitimeframe(),
+        ]);
+      } else {
+        console.error('Manual scan returned error:', data.error);
+        alert(`فشل الفحص الفوري: ${data.error || 'خطأ غير معروف في خادم الفحص'}`);
       }
     } catch (err: any) {
       console.error('Manual scan error:', err);
+      alert(`خطأ في الاتصال أثناء الفحص الفوري: ${err.message || 'خطأ في الشبكة'}`);
     } finally {
       setIsAnalyzing(false);
     }

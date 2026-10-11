@@ -1560,10 +1560,17 @@ class LiveMarketScanner {
   /**
    * Triggers an immediate scan and resets the 60-second timer
    */
-  public async triggerManualScan(force = false): Promise<TradeSignal | null> {
+  public async triggerManualScan(force = true): Promise<TradeSignal | null> {
     if (this.isScanRunning) {
-      console.log('[SCANNER] Manual scan: SKIPPED (Scan already in progress)');
-      return this.config.lastSignal || null;
+      const runDuration = Date.now() - (this.scanStartTime || 0);
+      if (runDuration > 45000) {
+        console.warn(`[SCANNER] Clearing stuck manual scan lock (duration: ${Math.round(runDuration / 1000)}s)`);
+        this.isScanRunning = false;
+        this.config.isScanning = false;
+      } else {
+        console.log('[SCANNER] Manual scan: SKIPPED (Scan already in progress)');
+        return this.config.lastSignal || null;
+      }
     }
 
     const now = Date.now();
@@ -1574,7 +1581,7 @@ class LiveMarketScanner {
       return this.config.lastSignal || null;
     }
 
-    console.log('[SCANNER] Manual scan: EXECUTING');
+    console.log(`[SCANNER] Manual scan: EXECUTING (force=${force})`);
     const res = await this.runScan('XAU/USD', { source: 'manual', force });
     // Reset next scan time countdown to full interval
     const intervalSec = this.config.intervalSeconds || 60;

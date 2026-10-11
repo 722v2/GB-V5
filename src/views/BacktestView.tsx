@@ -65,7 +65,8 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
     }
   };
 
-  const handleRunBacktest = async (allowAvailableSlice = false) => {
+  const handleRunBacktest = async (allowAvailableSlice: boolean | unknown = false) => {
+    const safeAllowSlice = typeof allowAvailableSlice === 'boolean' ? allowAvailableSlice : false;
     const capValue = parseFloat(String(initialCapital));
     const finalCap = !isNaN(capValue) && capValue > 0 ? capValue : 10;
 
@@ -74,14 +75,14 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
     setValidationAudit(null);
 
     try {
-      console.log('[Backtest] Executing realistic simulation...', { initialCapital: finalCap, timeRange, allowAvailableSlice });
+      console.log('[Backtest] Executing realistic simulation...', { initialCapital: finalCap, timeRange, allowAvailableSlice: safeAllowSlice });
       const res = await fetch('/api/backtest/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           initialCapital: finalCap,
           timeRange,
-          allowAvailableSlice,
+          allowAvailableSlice: safeAllowSlice,
         }),
       });
 
@@ -200,7 +201,7 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
             <button
               id="run-backtest-btn"
               type="button"
-              onClick={handleRunBacktest}
+              onClick={() => handleRunBacktest(false)}
               disabled={isRunning}
               className={`w-full py-2.5 px-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                 isRunning
