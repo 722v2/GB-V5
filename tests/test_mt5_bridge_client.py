@@ -138,5 +138,34 @@ class TestHistoricalCandleSync(unittest.TestCase):
         self.assertEqual(self.client.session.post.call_count, 3)
         self.assertTrue(self.client.candles_synced)
 
+    def test_batching_historical_candles(self):
+        """Test that large candle arrays are split into bounded batches of 500 candles per HTTP POST request."""
+        mock_mt5.symbol_select.return_value = True
+
+        # Generate 1200 dummy rates for M1, and None for M5, M15, H1
+        large_rates = [MockRate(t=1600000000 + i) for i in range(1200)]
+        mock_mt5.copy_rates_from_pos.side_effect = [
+            large_rates,
+            None,
+            None,
+            None
+        ]
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        self.client.session.post.return_value = mock_response
+
+        self.client.sync_historical_candles()
+
+        # 1200 candles / 500 batch size = 3 batches (500, 500, 200)
+        self.assertEqual(self.client.session.post.call_count, 3)
+        batch_1_len = len(self.client.session.post.call_args_list[0].kwargs['json']['candles'])
+        batch_2_len = len(self.client.session.post.call_args_list[1].kwargs['json']['candles'])
+        batch_3_len = len(self.client.session.post.call_args_list[2].kwargs['json']['candles'])
+        self.assertEqual(batch_1_len, 500)
+        self.assertEqual(batch_2_len, 500)
+        self.assertEqual(batch_3_len, 200)
+        self.assertTrue(self.client.candles_synced)
+
 if __name__ == "__main__":
     unittest.main()

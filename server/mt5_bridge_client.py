@@ -421,15 +421,26 @@ class WindowsMT5BridgeClient:
                     })
 
                 url = f"{SERVER_URL}/api/mt5/bridge/historical-candles"
-                try:
-                    res = self.session.post(url, json={"timeframe": tf_name, "candles": candles}, timeout=10)
-                    if res.status_code == 200:
-                        logger.info(f"Synced {len(candles)} {tf_name} historical candles to Render.")
-                    else:
-                        body_trunc = res.text[:200] if res.text else ""
-                        logger.warning(f"Failed to sync {tf_name} candles: HTTP {res.status_code} - {body_trunc}")
-                except Exception as e:
-                    logger.warning(f"Network error syncing {tf_name} candles: {e}")
+                BATCH_SIZE = 500
+                total_synced = 0
+                failed_batches = 0
+
+                for i in range(0, len(candles), BATCH_SIZE):
+                    batch = candles[i:i + BATCH_SIZE]
+                    try:
+                        res = self.session.post(url, json={"timeframe": tf_name, "candles": batch}, timeout=10)
+                        if res.status_code == 200:
+                            total_synced += len(batch)
+                        else:
+                            failed_batches += 1
+                            body_trunc = res.text[:200] if res.text else ""
+                            logger.warning(f"Failed to sync {tf_name} batch [{i}:{i+len(batch)}]: HTTP {res.status_code} - {body_trunc}")
+                    except Exception as e:
+                        failed_batches += 1
+                        logger.warning(f"Network error syncing {tf_name} batch [{i}:{i+len(batch)}]: {e}")
+
+                if total_synced > 0:
+                    logger.info(f"Synced {total_synced}/{len(candles)} {tf_name} historical candles to Render ({failed_batches} failed batches).")
             except Exception as e:
                 logger.error(f"Unexpected error extracting/syncing {tf_name} candles: {e}")
 

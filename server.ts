@@ -28,7 +28,8 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
   const httpServer = http.createServer(app);
 
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
   // Health check endpoint (Requirement 9 & Pre-Deployment Audit)
   app.get('/api/health', (req, res) => {

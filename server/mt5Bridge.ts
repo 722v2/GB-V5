@@ -973,9 +973,24 @@ class MT5BridgeService {
   public storeHistoricalCandles(timeframe: string, candles: Candle[]) {
     if (!Array.isArray(candles) || candles.length === 0) return;
     const tf = timeframe.toUpperCase();
-    this.candleCache.set(tf, candles);
+    const existing = this.candleCache.get(tf) || [];
+
+    const candleMap = new Map<number, Candle>();
+    for (const c of existing) {
+      if (c && typeof c.timestamp === 'number') {
+        candleMap.set(c.timestamp, c);
+      }
+    }
+    for (const c of candles) {
+      if (c && typeof c.timestamp === 'number') {
+        candleMap.set(c.timestamp, c);
+      }
+    }
+
+    const merged = Array.from(candleMap.values()).sort((a, b) => a.timestamp - b.timestamp);
+    this.candleCache.set(tf, merged);
     this.lastCandleSyncTime = Date.now();
-    console.log(`[MT5Bridge] Stored ${candles.length} historical candles for ${tf} from MT5.`);
+    console.log(`[MT5Bridge] Stored ${merged.length} historical candles for ${tf} from MT5 (incoming batch: ${candles.length}).`);
   }
 
   public getHistoricalCandles(timeframe: string): Candle[] | null {
