@@ -23,14 +23,14 @@ pip install -r mt5_requirements.txt
 :: Otherwise, set default variables below:
 if "%RENDER_GBV5_URL%"=="" set RENDER_GBV5_URL=https://your-app.onrender.com
 if "%MT5_BRIDGE_TOKEN%"=="" echo [WARNING] MT5_BRIDGE_TOKEN is not set. Please set MT5_BRIDGE_TOKEN in your environment or .env file.
-if "%MT5_SYMBOL%"=="" set MT5_SYMBOL=XAUUSD
+if "%MT5_SYMBOL%"=="" set MT5_SYMBOL=XAUUSD.m
 if "%MT5_MAGIC_NUMBER%"=="" set MT5_MAGIC_NUMBER=240726
 
 echo.
 echo ===============================================================
 echo Target GB-V5 URL : %RENDER_GBV5_URL%
 echo Target Symbol    : %MT5_SYMBOL%
-echo Mode             : STRICT DEMO ONLY
+echo Mode             : MANAGED MT5 BRIDGE (ANALYSIS / DEMO / LIVE)
 echo ===============================================================
 echo.
 

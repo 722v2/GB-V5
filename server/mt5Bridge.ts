@@ -47,7 +47,7 @@ export interface MT5AccountStatus {
   currency: string;
   server?: string;
   accountNumber?: string;
-  accountMode: 'DEMO';
+  accountMode: 'DEMO' | 'REAL' | 'ANALYSIS' | 'UNVERIFIED';
   tradeMode?: number; // 0 = DEMO in MetaTrader5
   leverage?: number;
   lastUpdated: number | null;
@@ -82,6 +82,7 @@ export interface MT5ExecutionCommand {
   ticket?: number; // For CLOSE or MODIFY
   magic: number;
   comment: string;
+  accountMode?: string;
   status: MT5CommandStatus;
   retryCount: number;
   maxRetries: number;
@@ -146,6 +147,10 @@ class MT5BridgeService {
   // Safety Boundary: Live trading is permanently disabled in this integration
   public readonly IS_LIVE_ALLOWED: boolean = false;
 
+  // Active execution mode selection: ANALYSIS | DEMO | LIVE (defaults to ANALYSIS or DEMO, stored server-side)
+  private activeExecutionMode: AccountExecutionMode = 'DEMO';
+  private liveTradingAuthorized: boolean = false;
+
   // Active status
   private lastStatus: MT5AccountStatus = {
     connected: false,
@@ -185,7 +190,7 @@ class MT5BridgeService {
     maxQuoteAgeSeconds: 10,
     maxConsecutiveFailures: 3,
     magicNumber: 240726,
-    symbolAllowlist: ['XAUUSD', 'GOLD', 'XAUUSDm', 'XAUUSD.a', 'XAUUSD.raw', 'XAUUSDb'],
+    symbolAllowlist: ['XAUUSD', 'GOLD', 'XAUUSDm', 'XAUUSD.m', 'XAUUSD.a', 'XAUUSD.raw', 'XAUUSDb'],
   };
 
   // Commands Queue (Outbound Windows Agent polling)
@@ -240,24 +245,85 @@ class MT5BridgeService {
    * ACCOUNT_TRADE_MODE_CONTEST = 1
    * ACCOUNT_TRADE_MODE_REAL = 2
    */
-  public isVerifiedDemoAccount(): boolean {
-    if (!this.lastStatus.connected) return false;
-    if (this.lastStatus.status === 'REFUSED_REAL_ACCOUNT') return false;
-    // If tradeMode is reported, it MUST be 0 (DEMO)
-    if (typeof this.lastStatus.tradeMode === 'number') {
-      return this.lastStatus.tradeMode === 0;
+  // Set the server-side active execution mode (ANALYSIS | DEMO | LIVE)
+  public setExecutionMode(mode: AccountExecutionMode): { success: boolean; message?: string } {
+    this.activeExecutionMode = mode;
+    // Reset explicit live authorization whenever mode changes or is re-set
+    if (mode !== 'LIVE') {
+      this.liveTradingAuthorized = false;
     }
-    return this.lastStatus.accountMode === 'DEMO';
+    console.log(`[MT5Bridge] Execution mode set to: ${mode}`);
+    return { success: true };
+  }
+
+  public getExecutionMode(): AccountExecutionMode {
+    return this.activeExecutionMode;
   }
 
   /**
-   * Check whether automated demo trading is currently active and eligible
+   * Explicit user authorization action to enable LIVE real account trading.
+   * Resets to false on restart, reconnect, mode change, or kill-switch.
+   */
+  public authorizeLiveTrading(): { success: boolean; reason?: string } {
+    if (this.killSwitchActivated) {
+      return { success: false, reason: 'زر الطوارئ مفعّل. يرجى إعادة الضبط أولاً.' };
+    }
+    if (!this.lastStatus.connected) {
+      return { success: false, reason: 'جسر MT5 غير متصل. يرجى تشغيل الجسر أولاً.' };
+    }
+    if (!this.isVerifiedRealAccount()) {
+      return { success: false, reason: 'الحساب المتصل ليس حساباً حقيقياً (REAL Account) موثقاً من MT5.' };
+    }
+    this.activeExecutionMode = 'LIVE';
+    this.liveTradingAuthorized = true;
+    this.demoAutoTradingEnabled = true;
+    console.log('[MT5Bridge] LIVE real account trading explicitly AUTHORIZED by user.');
+    return { success: true };
+  }
+
+  public revokeLiveTrading(): { success: boolean } {
+    this.liveTradingAuthorized = false;
+    if (this.activeExecutionMode === 'LIVE') {
+      this.activeExecutionMode = 'DEMO';
+    }
+    console.log('[MT5Bridge] LIVE real account trading REVOKED.');
+    return { success: true };
+  }
+
+  public isVerifiedDemoAccount(): boolean {
+    if (!this.lastStatus.connected) return false;
+    if (typeof this.lastStatus.tradeMode !== 'number') return false;
+    if (this.lastStatus.tradeMode !== 0) return false;
+    return this.lastStatus.accountMode === 'DEMO';
+  }
+
+  public isVerifiedRealAccount(): boolean {
+    if (!this.lastStatus.connected) return false;
+    if (typeof this.lastStatus.tradeMode !== 'number') return false;
+    if (this.lastStatus.tradeMode !== 2) return false;
+    return this.lastStatus.accountMode === 'REAL';
+  }
+
+  /**
+   * Check whether automated trading is currently active for the current mode
    */
   public isDemoAutoTradingActive(): boolean {
     if (this.killSwitchActivated) return false;
+    if (this.consecutiveFailures >= this.safetyConfig.maxConsecutiveFailures) return false;
+
+    if (this.activeExecutionMode === 'ANALYSIS') {
+      return false; // ANALYSIS mode never executes orders
+    }
+
+    if (this.activeExecutionMode === 'LIVE') {
+      if (!this.liveTradingAuthorized) return false;
+      if (!this.isVerifiedRealAccount()) return false;
+      return this.demoAutoTradingEnabled;
+    }
+
+    // DEMO mode
     if (!this.demoAutoTradingEnabled) return false;
     if (!this.isVerifiedDemoAccount()) return false;
-    if (this.consecutiveFailures >= this.safetyConfig.maxConsecutiveFailures) return false;
     return true;
   }
 
@@ -271,8 +337,14 @@ class MT5BridgeService {
     if (!this.lastStatus.connected) {
       return { success: false, reason: 'جسر MT5 غير متصل بالمنصة. شغّل Windows Bridge أولاً.' };
     }
+    if (this.activeExecutionMode === 'ANALYSIS') {
+      return { success: false, reason: 'النظام في وضع التحليل فقط (ANALYSIS ONLY). يمنع التداول التلقائي.' };
+    }
+    if (this.activeExecutionMode === 'LIVE') {
+      return this.authorizeLiveTrading();
+    }
     if (!this.isVerifiedDemoAccount()) {
-      return { success: false, reason: 'الحساب ليس حساب DEMO معتمد أو نمط التداول غير تجريبي. التداول الحقيقي محظور نهائياً.' };
+      return { success: false, reason: 'الحساب ليس حساب DEMO معتمد.' };
     }
     if (this.consecutiveFailures >= this.safetyConfig.maxConsecutiveFailures) {
       return { success: false, reason: `تم حظر التداول لتكرار ${this.consecutiveFailures} أخطاء تنفيذ متتالية.` };
@@ -288,7 +360,8 @@ class MT5BridgeService {
    */
   public disableDemoAutoTrading(): { success: boolean } {
     this.demoAutoTradingEnabled = false;
-    console.log('[MT5Bridge] Demo Auto-Trading DISABLED by user.');
+    this.liveTradingAuthorized = false;
+    console.log('[MT5Bridge] Auto-Trading DISABLED by user.');
     return { success: true };
   }
 
@@ -434,46 +507,41 @@ class MT5BridgeService {
   public handleBridgeHeartbeat(payload: MT5BridgeHeartbeatPayload): { success: boolean; message: string } {
     const isTerminalConnected = Boolean(payload.terminalConnected && payload.connected);
     const tradeMode = payload.tradeMode;
+    const rawAccountMode = payload.accountMode?.toUpperCase();
 
-    // Hard Safety Boundary: Check trade_mode
-    // tradeMode === 2 is ACCOUNT_TRADE_MODE_REAL
-    if (tradeMode === 2 || payload.accountMode?.toUpperCase() === 'REAL') {
-      this.lastStatus = {
-        connected: false,
-        status: 'REFUSED_REAL_ACCOUNT',
-        balance: null,
-        equity: null,
-        freeMargin: null,
-        currency: payload.currency || 'USD',
-        server: payload.server,
-        accountNumber: payload.login ? String(payload.login) : undefined,
-        accountMode: 'DEMO',
-        tradeMode: tradeMode,
-        lastUpdated: Date.now(),
-        statusMessage: '❌ تم رفض الاتصال: الحساب حساب حقيقي (REAL). هذا النظام مخصص فقط للتداول التجريبي (DEMO ONLY).',
-      };
-      // Trip safety switch
-      this.activateKillSwitch('محاولة ربط حساب حقيقي (REAL ACCOUNT ATTEMPT) - تم الحظر التلقائي.');
-      return { success: false, message: 'Refused: Real accounts are strictly forbidden.' };
+    // Strict Fail-Closed Account Verification:
+    // Rely strictly on verified numeric tradeMode (0 = DEMO, 2 = REAL).
+    // Never allow client-supplied accountMode to override or substitute missing tradeMode.
+    let verifiedAccountMode: 'DEMO' | 'REAL' | 'UNVERIFIED' = 'UNVERIFIED';
+
+    if (typeof tradeMode === 'number') {
+      if (tradeMode === 0) {
+        if (!rawAccountMode || rawAccountMode === 'DEMO') {
+          verifiedAccountMode = 'DEMO';
+        }
+      } else if (tradeMode === 2) {
+        if (!rawAccountMode || rawAccountMode === 'REAL') {
+          verifiedAccountMode = 'REAL';
+        }
+      }
     }
 
-    const isDemo = tradeMode === 0 || payload.accountMode?.toUpperCase() === 'DEMO';
-    if (!isDemo && isTerminalConnected) {
-      this.lastStatus = {
-        connected: false,
-        status: 'REFUSED_REAL_ACCOUNT',
-        balance: null,
-        equity: null,
-        freeMargin: null,
-        currency: payload.currency || 'USD',
-        accountMode: 'DEMO',
-        lastUpdated: Date.now(),
-        statusMessage: '❌ لا يمكن التحقق من أن الحساب تجريبي (DEMO). تم رفض التنفيذ.',
-      };
-      return { success: false, message: 'Refused: Unverified account mode.' };
-    }
+    const currentAccountNumber = payload.login ? String(payload.login) : undefined;
+    const currentServer = payload.server;
 
     const wasDisconnected = !this.lastStatus.connected;
+    const identityChanged =
+      (this.lastStatus.accountNumber && currentAccountNumber && this.lastStatus.accountNumber !== currentAccountNumber) ||
+      (this.lastStatus.server && currentServer && this.lastStatus.server !== currentServer) ||
+      (typeof this.lastStatus.tradeMode === 'number' && typeof tradeMode === 'number' && this.lastStatus.tradeMode !== tradeMode);
+
+    // Reset explicit LIVE authorization if disconnected, account identity changed, or mode is UNVERIFIED
+    if (wasDisconnected || identityChanged || verifiedAccountMode !== 'REAL') {
+      if (this.liveTradingAuthorized) {
+        console.warn(`[MT5Bridge] Account state change or unverified identity detected (wasDisconnected=${wasDisconnected}, identityChanged=${identityChanged}, verifiedMode=${verifiedAccountMode}). Revoking LIVE authorization.`);
+      }
+      this.liveTradingAuthorized = false;
+    }
 
     // Validate and update Broker Symbol Specifications if provided
     if (payload.symbolSpecs) {
@@ -495,22 +563,25 @@ class MT5BridgeService {
       equity: typeof payload.equity === 'number' ? payload.equity : null,
       freeMargin: typeof payload.freeMargin === 'number' ? payload.freeMargin : null,
       currency: payload.currency || 'USD',
-      server: payload.server,
-      accountNumber: payload.login ? String(payload.login) : undefined,
-      accountMode: 'DEMO',
-      tradeMode: tradeMode ?? 0,
+      server: currentServer,
+      accountNumber: currentAccountNumber,
+      accountMode: verifiedAccountMode,
+      tradeMode: typeof tradeMode === 'number' ? tradeMode : undefined,
       leverage: payload.leverage,
       lastUpdated: Date.now(),
-      statusMessage: isTerminalConnected ? 'MT5 Demo Terminal Connected' : 'Terminal Disconnected',
-      brokerSymbol: payload.brokerGoldSymbol || (payload.symbols && payload.symbols[0]) || 'XAUUSD',
+      statusMessage: isTerminalConnected
+        ? (verifiedAccountMode === 'UNVERIFIED'
+            ? 'MT5 Terminal Connected (Account Type UNVERIFIED)'
+            : `MT5 ${verifiedAccountMode} Terminal Connected`)
+        : 'Terminal Disconnected',
+      brokerSymbol: payload.brokerGoldSymbol || (payload.symbols && payload.symbols[0]) || 'XAUUSD.m',
       terminalConnected: isTerminalConnected,
       brokerSpecs: this.symbolSpecs,
       brokerSpecsValid: this.isBrokerSpecsValid(),
     };
 
-    // If bridge reconnected after disconnection, ensure auto-trading stays disabled until verified
     if (wasDisconnected && isTerminalConnected) {
-      console.log('[MT5Bridge] Windows MT5 Bridge connected. Auto-trading is disabled by default for safety.');
+      console.log(`[MT5Bridge] Windows MT5 Bridge connected (${verifiedAccountMode}). Auto-trading remains disabled until explicitly authorized.`);
     }
 
     // Reconcile open positions reported by MT5 terminal
@@ -591,15 +662,30 @@ class MT5BridgeService {
     comment?: string;
     signalId?: string;
   }): { success: boolean; commandId?: string; reason?: string } {
-    // 1. Check Safety Boundary
-    if (!this.isVerifiedDemoAccount()) {
-      return { success: false, reason: 'حساب MT5 غير متصل أو ليس حساب DEMO موثق.' };
+    // 1. Server-Side Execution Mode Authorization & Verification
+    if (this.activeExecutionMode === 'ANALYSIS') {
+      return { success: false, reason: 'النظام في وضع التحليل فقط (ANALYSIS ONLY). تم حظر جميع أشكال تنفيذ الأوامر.' };
     }
+
     if (this.killSwitchActivated) {
       return { success: false, reason: 'زر الطوارئ مفعّل - تم حظر فتح صفقات جديدة.' };
     }
-    if (!this.demoAutoTradingEnabled) {
-      return { success: false, reason: 'التداول التجريبي التلقائي معطل حالياً (Auto-trading disabled).' };
+
+    if (this.activeExecutionMode === 'LIVE') {
+      if (!this.liveTradingAuthorized) {
+        return { success: false, reason: 'التداول الحقيقي (LIVE Trading) يتطلب تفعيلاً وتفويضاً صريحاً من المستخدم.' };
+      }
+      if (!this.isVerifiedRealAccount()) {
+        return { success: false, reason: 'الحساب المتصل ليس حساباً حقيقياً (REAL Account) موثقاً من MT5.' };
+      }
+    } else {
+      // DEMO mode
+      if (!this.demoAutoTradingEnabled) {
+        return { success: false, reason: 'التداول التجريبي التلقائي معطل حالياً (Auto-trading disabled).' };
+      }
+      if (!this.isVerifiedDemoAccount()) {
+        return { success: false, reason: 'حساب MT5 غير متصل أو ليس حساب DEMO موثق.' };
+      }
     }
 
     // 2. Check Consecutive Failures Limit
@@ -701,6 +787,7 @@ class MT5BridgeService {
       tp2: params.tp2,
       magic: this.safetyConfig.magicNumber,
       comment: params.comment ? params.comment.substring(0, 31) : 'GB-V5 Demo Trade',
+      accountMode: this.activeExecutionMode,
       status: 'PENDING',
       retryCount: 0,
       maxRetries: 2,
@@ -942,7 +1029,11 @@ class MT5BridgeService {
   }
 
   public isAvailable(): boolean {
-    return this.lastStatus.connected && this.isVerifiedDemoAccount();
+    if (!this.lastStatus.connected) return false;
+    if (this.activeExecutionMode === 'LIVE') {
+      return this.isVerifiedRealAccount() && this.liveTradingAuthorized;
+    }
+    return this.isVerifiedDemoAccount();
   }
 }
 

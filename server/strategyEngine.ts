@@ -222,7 +222,7 @@ export function generateMultiStrategyCandidates(input: MultiStrategyEngineInput)
 
   const mappedCandidates: SetupCandidate[] = candidates.map((c) => ({
     family: c.family,
-    strategyFamily: c.family,
+    strategyFamily: (c.legacyFamilyAlias || c.family) as StrategyFamily,
     setupName: c.setupName,
     direction: c.direction,
     orderType: c.orderType,

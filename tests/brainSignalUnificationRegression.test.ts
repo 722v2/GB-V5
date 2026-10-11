@@ -216,12 +216,12 @@ async function runBrainSignalUnificationTests() {
   // -------------------------------------------------------------------------
   console.log('\nTEST G: Downstream Risk rejection preserves actual setup, confidence, and metadata');
   {
-    // Configure brokerSpecs with impossible SL range to force downstream Risk rejection
+    // Configure brokerSpecs with maxSlPoints lower than candidate SL to force downstream Risk rejection in evaluateTradeRisk without breaking structural TP/RR calculation in candidate discovery
     const inputRiskReject: MarketAnalysisInput = {
       ...baseInput,
       brokerSpecs: {
-        minSlPoints: 9999, // Impossible min SL forces risk rejection
-        maxSlPoints: 10000,
+        minSlPoints: 35,
+        maxSlPoints: 30, // Forces evaluateTradeRisk to reject SL (35 > 30) while candidate discovery SL/TP remains 100% valid
         minRr: 1.0,
         contractSizeOz: 100,
         minimumLot: 0.01,

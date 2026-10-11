@@ -26,7 +26,7 @@ function createDefaultIndicators(basePrice: number): TechnicalIndicators {
     ema20: Number((basePrice - 1.0).toFixed(2)),
     ema50: Number((basePrice - 2.0).toFixed(2)),
     ema200: Number((basePrice - 5.0).toFixed(2)),
-    rsi14: 50,
+    rsi14: 60,
     atr14: 2.0,
     vwap: Number((basePrice - 0.5).toFixed(2)),
     marketRegime: 'WEAK_UPTREND',

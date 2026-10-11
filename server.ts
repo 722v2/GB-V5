@@ -4,6 +4,7 @@ dotenv.config();
 import http from 'http';
 import express from 'express';
 import path from 'path';
+import crypto from 'crypto';
 import { createServer as createViteServer } from 'vite';
 import { AssetType } from './src/types.js';
 import { analyzeTechnicals } from './server/indicators.js';
@@ -390,7 +391,26 @@ async function startServer() {
     }
   });
 
-  app.post('/api/account/balance', (req, res) => {
+  // Sensitive Admin API Authorization Middleware
+  const verifyAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const { key: configuredAdminKey } = getAdminKey();
+
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : (req.headers['x-admin-key'] as string || req.headers['x-api-key'] as string || authHeader).trim();
+
+    if (!token || token !== configuredAdminKey) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Admin authentication token required for sensitive operations.',
+      });
+    }
+
+    next();
+  };
+
+  app.post('/api/account/balance', verifyAdminAuth, (req, res) => {
     try {
       const { currentBalance, startingBalance } = req.body || {};
       if (typeof currentBalance !== 'number' || isNaN(currentBalance)) {
@@ -403,7 +423,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/trades/reset-state', async (req, res) => {
+  app.post('/api/trades/reset-state', verifyAdminAuth, async (req, res) => {
     try {
       const result = await storage.resetTradingState();
       globalLifecycleManager.clear();
@@ -443,8 +463,64 @@ async function startServer() {
     }
   });
 
+  // Stable Admin Key Resolution for private single-user application
+  const DEFAULT_ADMIN_KEY = 'your_secure_random_bridge_token_here';
+
+  const getAdminKey = (): { key: string; source: string } => {
+    const envAdminKey = (process.env.ADMIN_API_KEY || '').trim();
+    if (envAdminKey) {
+      return { key: envAdminKey, source: 'ADMIN_API_KEY' };
+    }
+    const envBridgeToken = (process.env.MT5_BRIDGE_TOKEN || process.env.MT5_API_KEY || '').trim();
+    if (envBridgeToken) {
+      return { key: envBridgeToken, source: 'MT5_BRIDGE_TOKEN' };
+    }
+    return { key: DEFAULT_ADMIN_KEY, source: 'DEFAULT' };
+  };
+
+  // GET /api/auth/config - Metadata ONLY for UI authorization state (NEVER EXPOSES SECRETS)
+  app.get('/api/auth/config', (req, res) => {
+    const { source } = getAdminKey();
+    const { key: configuredAdminKey } = getAdminKey();
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : (req.headers['x-admin-key'] as string || req.headers['x-api-key'] as string || authHeader).trim();
+
+    const isAuthenticated = Boolean(token && token === configuredAdminKey);
+
+    res.json({
+      success: true,
+      isConfigured: true,
+      source,
+      requiresAuth: true,
+      authenticated: isAuthenticated,
+    });
+  });
+
+  // POST /api/auth/verify - Verifies an admin authentication key submitted by the frontend client
+  app.post('/api/auth/verify', (req, res) => {
+    const { key } = req.body || {};
+    const { key: configuredKey } = getAdminKey();
+    const submittedKey = (key || '').trim();
+
+    if (!submittedKey || submittedKey !== configuredKey) {
+      return res.status(401).json({
+        success: false,
+        authenticated: false,
+        error: 'Invalid admin authentication key.',
+      });
+    }
+
+    res.json({
+      success: true,
+      authenticated: true,
+      message: 'Admin authorization key verified successfully.',
+    });
+  });
+
   // Settings: PUT update system settings with strict validation
-  app.put('/api/settings', async (req, res) => {
+  app.put('/api/settings', verifyAdminAuth, async (req, res) => {
     try {
       const patch = req.body || {};
       const saveResult = storage.saveSettings(patch);
@@ -453,6 +529,9 @@ async function startServer() {
       }
 
       const updatedSettings = saveResult.settings;
+      if (updatedSettings.accountMode) {
+        mt5Bridge.setExecutionMode(updatedSettings.accountMode);
+      }
       const mt5Status = await mt5Bridge.getAccountStatus();
       let activeCapital = updatedSettings.manualCapital;
       if (updatedSettings.capitalSource === 'MT5') {
@@ -620,26 +699,32 @@ async function startServer() {
     res.json(mt5Bridge.getStatus());
   });
 
-  // Enable Demo Auto-Trading (Strict user action required)
-  app.post('/api/mt5/auto-trading/enable', (req, res) => {
+  // Enable Auto-Trading (Strict user action required)
+  app.post('/api/mt5/auto-trading/enable', verifyAdminAuth, (req, res) => {
+    const currentMode = mt5Bridge.getExecutionMode();
     const result = mt5Bridge.enableDemoAutoTrading();
     if (!result.success) {
       return res.status(400).json({ success: false, error: result.reason });
     }
-    // Also update settings in storage
-    storage.saveSettings({ autoTradingEnabled: true, executionMode: 'DEMO', accountMode: 'DEMO' });
-    res.json({ success: true, message: 'تم تفعيل التداول التجريبي التلقائي (Demo Auto-Trading) بنجاح.' });
+    // Also update settings in storage without clobbering active mode
+    storage.saveSettings({ autoTradingEnabled: true });
+    res.json({
+      success: true,
+      message: currentMode === 'LIVE'
+        ? 'تم تفعيل التداول الحقيقي المباشر (LIVE Trading) بنجاح.'
+        : 'تم تفعيل التداول التجريبي التلقائي (Demo Auto-Trading) بنجاح.'
+    });
   });
 
   // Disable Demo Auto-Trading
-  app.post('/api/mt5/auto-trading/disable', (req, res) => {
+  app.post('/api/mt5/auto-trading/disable', verifyAdminAuth, (req, res) => {
     mt5Bridge.disableDemoAutoTrading();
     storage.saveSettings({ autoTradingEnabled: false });
     res.json({ success: true, message: 'تم إيقاف التداول التجريبي التلقائي.' });
   });
 
   // Emergency Kill-Switch
-  app.post('/api/mt5/kill-switch', (req, res) => {
+  app.post('/api/mt5/kill-switch', verifyAdminAuth, (req, res) => {
     const { reason } = req.body || {};
     mt5Bridge.activateKillSwitch(reason || 'Manual Emergency Trigger');
     storage.saveSettings({ autoTradingEnabled: false });
@@ -647,7 +732,7 @@ async function startServer() {
   });
 
   // Reset Kill-Switch
-  app.post('/api/mt5/kill-switch/reset', (req, res) => {
+  app.post('/api/mt5/kill-switch/reset', verifyAdminAuth, (req, res) => {
     mt5Bridge.resetKillSwitch();
     res.json({ success: true, message: 'تمت إعادة ضبط زر الطوارئ (يبقى التداول معطلاً لحين التفعيل اليدوي الصريح).' });
   });
@@ -672,7 +757,7 @@ async function startServer() {
   });
 
   // MT5 Order Queue Endpoint
-  app.post('/api/mt5/order', async (req, res) => {
+  app.post('/api/mt5/order', verifyAdminAuth, async (req, res) => {
     try {
       const {
         symbol = 'XAUUSD',
@@ -719,7 +804,7 @@ async function startServer() {
   });
 
   // MT5 Modify Order Endpoint (Modify SL / TP)
-  app.post('/api/mt5/modify', async (req, res) => {
+  app.post('/api/mt5/modify', verifyAdminAuth, async (req, res) => {
     try {
       const { ticket, stopLoss, takeProfit } = req.body;
       const settings = storage.getSettings();
@@ -743,7 +828,7 @@ async function startServer() {
   });
 
   // MT5 Close Order Endpoint
-  app.post('/api/mt5/close', async (req, res) => {
+  app.post('/api/mt5/close', verifyAdminAuth, async (req, res) => {
     try {
       const { ticket, lot, tradeId, closePrice } = req.body;
       const settings = storage.getSettings();
@@ -803,7 +888,7 @@ async function startServer() {
   });
 
   // Scanner pause control
-  app.post('/api/scanner/pause', (req, res) => {
+  app.post('/api/scanner/pause', verifyAdminAuth, (req, res) => {
     try {
       scanner.pause();
       res.json({ success: true, isPaused: true, status: scanner.getStatus() });
@@ -813,7 +898,7 @@ async function startServer() {
   });
 
   // Scanner resume control
-  app.post('/api/scanner/resume', (req, res) => {
+  app.post('/api/scanner/resume', verifyAdminAuth, (req, res) => {
     try {
       scanner.resume();
       res.json({ success: true, isPaused: false, status: scanner.getStatus() });
@@ -823,7 +908,7 @@ async function startServer() {
   });
 
   // Scanner manual trigger
-  app.post('/api/scanner/scan-now', async (req, res) => {
+  app.post('/api/scanner/scan-now', verifyAdminAuth, async (req, res) => {
     try {
       const { balance, losingStreak, brokerSpecs, force } = req.body || {};
       if (balance !== undefined) {
@@ -837,7 +922,7 @@ async function startServer() {
   });
 
   // Scanner toggle and config update
-  app.post('/api/scanner/toggle', (req, res) => {
+  app.post('/api/scanner/toggle', verifyAdminAuth, (req, res) => {
     try {
       const {
         enabled,
@@ -847,7 +932,7 @@ async function startServer() {
         balance,
         losingStreak,
         brokerSpecs,
-      } = req.body;
+        } = req.body;
       
       if (balance !== undefined) {
         scanner.setAccountContext(Number(balance), Number(losingStreak) || 0, brokerSpecs);
@@ -867,7 +952,7 @@ async function startServer() {
   });
 
   // Manual cancellation of an ACTIVE/APPROVED/DISPATCHED signal
-  app.post('/api/scanner/cancel-signal', (req, res) => {
+  app.post('/api/scanner/cancel-signal', verifyAdminAuth, (req, res) => {
     try {
       const { id } = req.body;
       if (!id) {
@@ -918,7 +1003,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/trades', async (req, res) => {
+  app.post('/api/trades', verifyAdminAuth, async (req, res) => {
     try {
       const trade = req.body;
       if (!trade) {
@@ -1004,7 +1089,7 @@ async function startServer() {
     }
   });
 
-  app.put('/api/trades/:id', async (req, res) => {
+  app.put('/api/trades/:id', verifyAdminAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const patch = req.body;
@@ -1065,7 +1150,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/trades', async (req, res) => {
+  app.delete('/api/trades', verifyAdminAuth, async (req, res) => {
     try {
       const updatedLedger = await storage.clearAllTrades();
       const dailyStats = storage.getTodayStats();
@@ -1075,7 +1160,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/trades/:id', (req, res) => {
+  app.delete('/api/trades/:id', verifyAdminAuth, (req, res) => {
     try {
       const { id } = req.params;
       const updatedLedger = storage.deleteTrade(id);
@@ -1189,7 +1274,7 @@ async function startServer() {
     }
   });
 
-  app.post('/api/telegram/test', async (req, res) => {
+  app.post('/api/telegram/test', verifyAdminAuth, async (req, res) => {
     try {
       const result = await telegramService.sendTestNotification();
       res.json(result);
@@ -1203,7 +1288,7 @@ async function startServer() {
    * Sends a simple direct test message to verify Telegram bot connectivity.
    * Never mutates storage, opportunities, accounting, scanner, or trade ledger state.
    */
-  app.post('/api/telegram/test-signal', async (req, res) => {
+  app.post('/api/telegram/test-signal', verifyAdminAuth, async (req, res) => {
     try {
       const testMessage = (req.body?.message as string) || '✅ Telegram connection test successful';
 
@@ -1229,7 +1314,7 @@ async function startServer() {
   });
 
   // Manual or programmatic trade outcome recording endpoint
-  app.post('/api/record-outcome', (req, res) => {
+  app.post('/api/record-outcome', verifyAdminAuth, (req, res) => {
     try {
       const { signalId, outcome, realizedPnl, exitPrice, source, brokerDealId, brokerOrderId, closeReason } = req.body || {};
       if (!signalId || (outcome !== 'WIN' && outcome !== 'LOSS')) {
@@ -1266,7 +1351,7 @@ async function startServer() {
   });
 
   // Future MT5 trade reconciliation endpoint
-  app.post('/api/mt5/reconcile', (req, res) => {
+  app.post('/api/mt5/reconcile', verifyAdminAuth, (req, res) => {
     try {
       const { signalOrTradeId, brokerDealId, brokerOrderId, entryPrice, exitPrice, lotSize, realizedPnl, closedAt, closeReason, direction } = req.body || {};
       if (!signalOrTradeId || !brokerDealId || realizedPnl === undefined || exitPrice === undefined) {

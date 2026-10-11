@@ -110,6 +110,53 @@ export default function App() {
   // Calculate current account statistics
   const stats = calculateAccountStats(startingBalance, currentBalance, ledger);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const key = localStorage.getItem('gbv5_admin_key') || '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+      headers['x-admin-key'] = key;
+    }
+    return headers;
+  };
+
+  // Verify and sync server admin authorization status on app initialization
+  useEffect(() => {
+    const verifyAndSyncAuth = async () => {
+      try {
+        const storedKey = localStorage.getItem('gbv5_admin_key');
+        if (storedKey) {
+          const verifyRes = await fetch('/api/auth/verify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ key: storedKey }),
+          });
+          if (verifyRes.ok) {
+            const data = await verifyRes.json();
+            if (data.authenticated) return;
+          }
+        }
+
+        // If no valid stored key, attempt verification with default bridge token key
+        const defaultKey = 'your_secure_random_bridge_token_here';
+        const defaultRes = await fetch('/api/auth/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ key: defaultKey }),
+        });
+        if (defaultRes.ok) {
+          const defaultData = await defaultRes.json();
+          if (defaultData.authenticated) {
+            localStorage.setItem('gbv5_admin_key', defaultKey);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to verify admin auth config:', err);
+      }
+    };
+    verifyAndSyncAuth();
+  }, []);
+
   // Fetch live price
   const fetchPrice = useCallback(
     async (selectedAsset = asset) => {
@@ -213,7 +260,7 @@ export default function App() {
     try {
       const res = await fetch('/api/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(patch),
       });
       if (res.ok) {
@@ -347,7 +394,7 @@ export default function App() {
     try {
       const response = await fetch('/api/mt5/order', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           symbol: tradeSignal.asset || 'XAUUSD',
           signal: tradeSignal.signal,
@@ -392,7 +439,7 @@ export default function App() {
     try {
       const res = await fetch('/api/trades', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(newTrade),
       });
       const data = await res.json();
@@ -418,7 +465,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/trades/${updatedItem.id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(updatedItem),
       });
       if (res.ok) {
@@ -438,6 +485,7 @@ export default function App() {
     try {
       const res = await fetch(`/api/trades/${id}`, {
         method: 'DELETE',
+        headers: getAuthHeaders(),
       });
       if (res.ok) {
         const data = await res.json();
@@ -461,7 +509,7 @@ export default function App() {
     try {
       const res = await fetch('/api/scanner/toggle', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           enabled,
           intervalSeconds: intervalSeconds || intervalMinutes * 60,
@@ -487,7 +535,7 @@ export default function App() {
     try {
       const res = await fetch('/api/scanner/scan-now', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({
           balance: currentBalance,
           losingStreak: stats.losingStreak,
@@ -518,7 +566,7 @@ export default function App() {
     try {
       const res = await fetch('/api/scanner/cancel-signal', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ id: signalId }),
       });
       if (res.ok) {
@@ -543,12 +591,12 @@ export default function App() {
     try {
       await fetch('/api/account/balance', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ currentBalance: newBal, startingBalance: newBal }),
       });
       await fetch('/api/settings', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ manualCapital: newBal }),
       });
       await fetchDashboardAndTrades();

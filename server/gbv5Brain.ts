@@ -115,9 +115,35 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
   const rawAtr15m = indicators15m?.atr14 ?? indicators15m?.atr;
   const atr15m = (typeof rawAtr15m === 'number' && rawAtr15m > 0 && isFinite(rawAtr15m)) ? rawAtr15m : 0;
 
-  const partition1m = partition1mCandles(candles1m);
+  let effective1m = candles1m;
+  if ((!effective1m || !Array.isArray(effective1m) || effective1m.length === 0) && Array.isArray(candles5m) && candles5m.length > 0) {
+    const synth: Candle[] = [];
+    for (const c of candles5m) {
+      const isBull = c.close >= c.open;
+      const delta = c.close - c.open;
+      const t = c.timestamp;
+      for (let m = 0; m < 5; m++) {
+        const fracStart = m / 5;
+        const fracEnd = (m + 1) / 5;
+        const mOpen = c.open + delta * fracStart;
+        const mClose = c.open + delta * fracEnd;
+        synth.push({
+          timestamp: t + m * 60000,
+          open: Number(mOpen.toFixed(2)),
+          high: Number(Math.max(mOpen, mClose, m === 0 && !isBull ? c.high : m === 4 && isBull ? c.high : (mOpen + mClose) / 2 + 0.1).toFixed(2)),
+          low: Number(Math.min(mOpen, mClose, m === 0 && isBull ? c.low : m === 4 && !isBull ? c.low : (mOpen + mClose) / 2 - 0.1).toFixed(2)),
+          close: Number(mClose.toFixed(2)),
+          volume: Math.round((c.volume || 100) / 5),
+          isClosed: c.isClosed !== false,
+        });
+      }
+    }
+    effective1m = synth;
+  }
+
+  const partition1m = partition1mCandles(effective1m);
   const closed1m = partition1m.closedCandles || [];
-  const last1m = partition1m.lastClosedCandle || (candles1m.length > 0 ? candles1m[candles1m.length - 1] : null);
+  const last1m = partition1m.lastClosedCandle || (effective1m.length > 0 ? effective1m[effective1m.length - 1] : null);
   const prev1m = partition1m.prevClosedCandle || last1m;
 
   const partition5m = partition5mCandles(candles5m);
@@ -125,10 +151,10 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
   const last5m = partition5m.lastClosedCandle || candles5m[candles5m.length - 1];
   const prev5m = partition5m.prevClosedCandle || last5m;
 
-  if (!candles1m || !Array.isArray(candles1m) || candles1m.length === 0 || !last1m || !partition1m.isValid) {
+  if (!effective1m || !Array.isArray(effective1m) || effective1m.length === 0 || !last1m || !partition1m.isValid) {
     const evidenceBundle = buildCompleteEvidenceBundle({
       currentPrice,
-      candles1m,
+      candles1m: effective1m,
       candles5m,
       candles15m,
       candles1h,
@@ -142,7 +168,7 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
 
   const evidenceBundle = buildCompleteEvidenceBundle({
     currentPrice,
-    candles1m,
+    candles1m: effective1m,
     candles5m,
     candles15m,
     candles1h,
@@ -203,7 +229,16 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
       }
     }
 
-    const slDist = Math.abs(currentPrice - sl);
+    const minSlPts = Number(brokerSpecs?.minGoldSlPoints ?? brokerSpecs?.minSlPoints ?? 35);
+    const maxSlPts = Number(brokerSpecs?.maxGoldSlPoints ?? brokerSpecs?.maxSlPoints ?? 65);
+    const minSlDist = minSlPts * 0.1;
+
+    let slDist = Math.abs(currentPrice - sl);
+    if (slDist < minSlDist) {
+      sl = direction === 'BUY' ? Number((currentPrice - minSlDist).toFixed(2)) : Number((currentPrice + minSlDist).toFixed(2));
+      slDist = Math.abs(currentPrice - sl);
+    }
+
     if (slDist <= 0.05) return null;
     const slPts = Math.round((slDist / 0.1) * 10) / 10;
 
@@ -422,6 +457,34 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
           'HTF Directional Flow',
         ],
         evidenceScoreBonus: paM1.hasDisplacement ? 5 : 4,
+      });
+      if (c) candidates.push(c);
+    }
+
+    // MSS / CHoCH reversal setup
+    const mssDetected = structEv.hasChoch || Boolean(indicators5m?.mssDetected) || Boolean(indicators15m?.mssDetected);
+    if (mssDetected) {
+      const mssDir: 'BUY' | 'SELL' = (indicators5m?.mssDirection || indicators15m?.mssDirection || structEv.chochDirection) === 'BEARISH' ? 'SELL' : 'BUY';
+      const c = constructCandidate({
+        family: 'STRUCTURE_BREAK_RETEST',
+        legacyFamilyAlias: 'MARKET_STRUCTURE',
+        setupName: `GB-V5 Market Structure Shift (BOS / CHOCH ${mssDir === 'BUY' ? 'Bullish' : 'Bearish'} Reversal)`,
+        direction: mssDir,
+        structuralStopLoss: mssDir === 'BUY'
+          ? Math.min(last1m ? last1m.low : currentPrice, structEv.swingLow) - (atr5m > 0 ? atr5m * 0.3 : 1.5)
+          : Math.max(last1m ? last1m.high : currentPrice, structEv.swingHigh) + (atr5m > 0 ? atr5m * 0.3 : 1.5),
+        mainReasons: [
+          `تغير مؤكد في هيكل السوق (BOS / CHOCH) نحو الاتجاه ${mssDir === 'BUY' ? 'الصاعد' : 'الهابط'}`,
+          'تأكيد اكتمال سحب السيولة وانعكاس حركة السعر بعد كسر المستوى الهيكلي',
+          'استهداف مناطق السيولة المقابلة ضمن تدفق الأوامر الجديد',
+        ],
+        invalidation: `كسر مستوى الحماية الهيكلية للانعكاس`,
+        supportingConfluences: [
+          'Market Structure Shift (MSS)',
+          'Change of Character (CHoCH)',
+          'Liquidity Sweep & Displacement',
+        ],
+        evidenceScoreBonus: 6,
       });
       if (c) candidates.push(c);
     }

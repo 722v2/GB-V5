@@ -338,7 +338,7 @@ export interface MT5AccountInfo {
   statusMessage?: string;
 }
 
-export type AccountExecutionMode = 'DEMO' | 'REAL';
+export type AccountExecutionMode = 'ANALYSIS' | 'DEMO' | 'LIVE' | 'REAL' | 'UNVERIFIED';
 
 export interface AppSettings {
   capitalSource: CapitalSource;

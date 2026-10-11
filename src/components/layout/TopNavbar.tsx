@@ -70,11 +70,16 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
                 {tabInfo.title}
               </h2>
 
-              {/* Mode Badge (DEMO / REAL) */}
-              {accountMode === 'REAL' ? (
+              {/* Mode Badge (ANALYSIS / DEMO / LIVE/REAL) */}
+              {accountMode === 'ANALYSIS' ? (
+                <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full bg-amber-950/90 text-amber-300 border border-amber-800/80 font-mono font-bold shrink-0">
+                  <Radio className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-400" />
+                  ANALYSIS ONLY
+                </span>
+              ) : accountMode === 'REAL' || accountMode === 'LIVE' ? (
                 <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-700 font-mono font-black shrink-0 animate-pulse">
                   <Flame className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-rose-400" />
-                  REAL
+                  REAL / LIVE
                 </span>
               ) : (
                 <span className="inline-flex items-center gap-1 text-[9px] sm:text-[10px] px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/60 font-mono font-bold shrink-0">

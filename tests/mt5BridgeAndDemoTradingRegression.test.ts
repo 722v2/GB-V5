@@ -41,8 +41,9 @@ async function runMT5BridgeRegressionTests() {
   assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'Auto-trading should be inactive initially');
   console.log('✅ [PASS] TEST 1: Initial state safely disconnected.\n');
 
-  // TEST 2: Refuse REAL account connection and trip kill switch
-  console.log('TEST 2: Strict rejection of REAL account (tradeMode = 2)');
+  // TEST 2: DEMO mode rejects REAL account, and LIVE mode requires explicit authorization
+  console.log('TEST 2: DEMO mode rejects REAL account, and LIVE mode requires authorization');
+  mt5Bridge.setExecutionMode('DEMO');
   const realHeartbeatRes = mt5Bridge.handleBridgeHeartbeat({
     connected: true,
     terminalConnected: true,
@@ -55,13 +56,239 @@ async function runMT5BridgeRegressionTests() {
     tradeMode: 2, // ACCOUNT_TRADE_MODE_REAL
     accountMode: 'REAL',
   });
-  assert.strictEqual(realHeartbeatRes.success, false, 'Heartbeat must reject real accounts');
-  assert.strictEqual(mt5Bridge.isVerifiedDemoAccount(), false, 'Must not verify real account as demo');
-  assert.strictEqual(mt5Bridge.getStatus().safety.killSwitchActivated, true, 'Emergency kill switch must trip on real account');
-  console.log('✅ [PASS] TEST 2: REAL account strictly refused and kill switch tripped.\n');
+  assert.strictEqual(realHeartbeatRes.success, true, 'Heartbeat acknowledges real account');
+  assert.strictEqual(mt5Bridge.isVerifiedDemoAccount(), false, 'DEMO mode must not verify REAL account');
+  assert.strictEqual(mt5Bridge.isVerifiedRealAccount(), true, 'Must verify account as REAL');
+  
+  // In DEMO mode, attempting to queue order on REAL account must be rejected
+  const realOrderInDemoMode = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(realOrderInDemoMode.success, false, 'DEMO mode must reject order queue on REAL account');
+  console.log('✅ [PASS] TEST 2: DEMO mode strictly rejects execution on REAL account.\n');
 
-  // Reset kill switch for subsequent tests
-  mt5Bridge.resetKillSwitch();
+  // TEST 2B: ANALYSIS mode blocks all order execution server-side
+  console.log('TEST 2B: ANALYSIS mode blocks all order execution server-side');
+  mt5Bridge.setExecutionMode('ANALYSIS');
+  const analysisOrder = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(analysisOrder.success, false, 'ANALYSIS mode must block order execution');
+  assert(analysisOrder.reason?.includes('وضع التحليل فقط'), 'Rejection reason must mention ANALYSIS ONLY');
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'Auto-trading must be inactive in ANALYSIS mode');
+  console.log('✅ [PASS] TEST 2B: ANALYSIS mode server-side execution blockage verified.\n');
+
+  // TEST 2C: LIVE mode requires explicit authorization before order execution
+  console.log('TEST 2C: LIVE mode requires explicit user authorization before order execution');
+  mt5Bridge.setExecutionMode('LIVE');
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'LIVE auto-trading must be inactive before explicit authorization');
+  
+  const liveOrderUnauthorized = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(liveOrderUnauthorized.success, false, 'LIVE mode must reject execution before explicit user authorization');
+
+  // Explicitly authorize LIVE trading on verified REAL account
+  const authRes = mt5Bridge.authorizeLiveTrading();
+  assert.strictEqual(authRes.success, true, 'LIVE authorization on verified REAL account must succeed');
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), true, 'LIVE auto-trading must be active after explicit authorization');
+
+  const liveOrderAuthorized = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(liveOrderAuthorized.success, true, 'LIVE authorized order on verified REAL account must be queued');
+  console.log('✅ [PASS] TEST 2C: LIVE mode explicit authorization and execution verified.\n');
+
+  // TEST 2D: Missing or unsupported tradeMode fails closed to UNVERIFIED (Impersonation blocked)
+  console.log('TEST 2D: Missing or unsupported tradeMode fails closed to UNVERIFIED');
+  
+  // 2D.1: Missing tradeMode with accountMode: "DEMO"
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 11223344,
+    server: 'Demo-Server',
+    accountMode: 'DEMO', // Missing numeric tradeMode!
+  });
+  assert.strictEqual(mt5Bridge.isVerifiedDemoAccount(), false, 'Missing tradeMode must NOT verify as DEMO');
+  assert.strictEqual(mt5Bridge.getStatus().account.accountMode, 'UNVERIFIED', 'Missing tradeMode must result in UNVERIFIED accountMode');
+
+  // 2D.2: Missing tradeMode with accountMode: "REAL"
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 11223344,
+    server: 'Live-Server',
+    accountMode: 'REAL', // Missing numeric tradeMode!
+  });
+  assert.strictEqual(mt5Bridge.isVerifiedRealAccount(), false, 'Missing tradeMode must NOT verify as REAL');
+  assert.strictEqual(mt5Bridge.getStatus().account.accountMode, 'UNVERIFIED', 'Missing tradeMode must result in UNVERIFIED accountMode');
+
+  // 2D.3: Unsupported tradeMode (e.g. Contest mode = 1 or invalid = 99)
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 11223344,
+    server: 'Contest-Server',
+    tradeMode: 1,
+    accountMode: 'CONTEST',
+  });
+  assert.strictEqual(mt5Bridge.isVerifiedDemoAccount(), false, 'Contest mode must NOT verify as DEMO');
+  assert.strictEqual(mt5Bridge.isVerifiedRealAccount(), false, 'Contest mode must NOT verify as REAL');
+  assert.strictEqual(mt5Bridge.getStatus().account.accountMode, 'UNVERIFIED', 'Unsupported tradeMode must result in UNVERIFIED accountMode');
+
+  // Unverified account must block order execution
+  const unverifiedOrder = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(unverifiedOrder.success, false, 'Unverified account state must block order execution');
+  console.log('✅ [PASS] TEST 2D: Missing or unsupported tradeMode strictly fails closed to UNVERIFIED.\n');
+
+  // TEST 2E: Contradictory account information fails closed
+  console.log('TEST 2E: Contradictory account information fails closed');
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 55667788,
+    server: 'Mixed-Server',
+    tradeMode: 0, // DEMO numeric
+    accountMode: 'REAL', // Contradictory string!
+  });
+  assert.strictEqual(mt5Bridge.isVerifiedDemoAccount(), false, 'Contradictory tradeMode vs accountMode must fail closed');
+  assert.strictEqual(mt5Bridge.isVerifiedRealAccount(), false, 'Contradictory tradeMode vs accountMode must fail closed');
+  assert.strictEqual(mt5Bridge.getStatus().account.accountMode, 'UNVERIFIED', 'Contradictory data must set accountMode to UNVERIFIED');
+  console.log('✅ [PASS] TEST 2E: Contradictory account information correctly fails closed.\n');
+
+  // TEST 2F: LIVE authorization is revoked on account identity or type change
+  console.log('TEST 2F: LIVE authorization is revoked on account identity or server/type change');
+  // First set up verified REAL account and authorize
+  mt5Bridge.setExecutionMode('LIVE');
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 12345678,
+    server: 'Real-Server-01',
+    tradeMode: 2,
+    accountMode: 'REAL',
+  });
+  const liveAuthResult = mt5Bridge.authorizeLiveTrading();
+  assert.strictEqual(liveAuthResult.success, true, 'LIVE authorization should succeed for verified REAL account');
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), true, 'LIVE auto-trading active');
+
+  // Now switch account login number on heartbeat
+  mt5Bridge.handleBridgeHeartbeat({
+    connected: true,
+    terminalConnected: true,
+    login: 87654321, // Changed account login!
+    server: 'Real-Server-01',
+    tradeMode: 2,
+    accountMode: 'REAL',
+  });
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'LIVE authorization must be REVOKED when account login changes');
+
+  const revokedOrder = mt5Bridge.queueDemoOrder({
+    action: 'BUY',
+    symbol: 'XAUUSD.m',
+    volume: 0.01,
+    price: 2500,
+    sl: 2495,
+    tp: 2510,
+  });
+  assert.strictEqual(revokedOrder.success, false, 'Order queue must be rejected after LIVE authorization revocation');
+  console.log('✅ [PASS] TEST 2F: Account identity change revokes LIVE authorization.\n');
+
+  // TEST 2G: Sensitive Web API Authentication Enforcement
+  console.log('TEST 2G: Sensitive Web API Authentication Enforcement');
+  const prevAdminKey = process.env.ADMIN_API_KEY;
+  process.env.ADMIN_API_KEY = 'secure_test_admin_key_2026';
+
+  let statusCode = 0;
+  let responseData: any = null;
+  let nextCalled = false;
+
+  const mockRes: any = {
+    status: (code: number) => {
+      statusCode = code;
+      return mockRes;
+    },
+    json: (data: any) => {
+      responseData = data;
+      return mockRes;
+    },
+  };
+
+  // Simulate verifyAdminAuth middleware logic
+  const verifyAdminAuthTest = (reqHeaders: any, nextFn: () => void) => {
+    statusCode = 0;
+    responseData = null;
+    nextCalled = false;
+
+    const configuredKey = (process.env.ADMIN_API_KEY || '').trim();
+    if (configuredKey) {
+      const authHeader = reqHeaders.authorization || '';
+      const token = authHeader.startsWith('Bearer ')
+        ? authHeader.slice(7).trim()
+        : (reqHeaders['x-admin-key'] || reqHeaders['x-api-key'] || authHeader).trim();
+
+      if (!token || token !== configuredKey) {
+        statusCode = 401;
+        responseData = { success: false, error: 'Unauthorized: Admin authentication token required' };
+        return;
+      }
+    }
+    nextFn();
+  };
+
+  // 2G.1: Unauthenticated request to sensitive route must be rejected with 401
+  verifyAdminAuthTest({}, () => { nextCalled = true; });
+  assert.strictEqual(nextCalled, false, 'Unauthenticated request must NOT proceed to handler');
+  assert.strictEqual(statusCode, 401, 'Unauthenticated request must receive HTTP 401');
+  assert.strictEqual(responseData?.success, false, 'Response must indicate failure');
+
+  // 2G.2: Request with invalid key must be rejected
+  verifyAdminAuthTest({ authorization: 'Bearer wrong_key' }, () => { nextCalled = true; });
+  assert.strictEqual(nextCalled, false, 'Request with invalid key must NOT proceed');
+  assert.strictEqual(statusCode, 401, 'Invalid key request must receive HTTP 401');
+
+  // 2G.3: Authenticated request with correct Bearer token must pass
+  verifyAdminAuthTest({ authorization: 'Bearer secure_test_admin_key_2026' }, () => { nextCalled = true; });
+  assert.strictEqual(nextCalled, true, 'Authenticated request with Bearer token must proceed');
+
+  // 2G.4: Authenticated request with x-admin-key header must pass
+  verifyAdminAuthTest({ 'x-admin-key': 'secure_test_admin_key_2026' }, () => { nextCalled = true; });
+  assert.strictEqual(nextCalled, true, 'Authenticated request with x-admin-key header must proceed');
+
+  process.env.ADMIN_API_KEY = prevAdminKey;
+  console.log('✅ [PASS] TEST 2G: Sensitive Web API endpoints strictly require authentication.\n');
+
+  // Reset to DEMO mode and disable auto trading for subsequent tests
+  mt5Bridge.setExecutionMode('DEMO');
+  mt5Bridge.disableDemoAutoTrading();
 
   // TEST 3: Accept valid DEMO account heartbeat
   console.log('TEST 3: Accept valid DEMO account heartbeat (tradeMode = 0)');

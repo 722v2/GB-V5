@@ -36,4 +36,4 @@ services:
       - key: MT5_MAGIC_NUMBER
         value: "240726"
       - key: MT5_ALLOWED_SYMBOLS
-        value: "XAUUSD,GOLD,XAUUSDm,XAUUSD.a,XAUUSD.raw,XAUUSDb"
+        value: "XAUUSD,GOLD,XAUUSDm,XAUUSD.m,XAUUSD.a,XAUUSD.raw,XAUUSDb"

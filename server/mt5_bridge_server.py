@@ -225,7 +225,7 @@ def get_candles():
     # Verify Symbol in MarketWatch
     selected = mt5.symbol_select(symbol, True)
     if not selected:
-        for alt in ["XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.a", "XAUUSD.raw"]:
+        for alt in ["XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.m", "XAUUSD.a", "XAUUSD.raw"]:
             if mt5.symbol_select(alt, True):
                 symbol = alt
                 selected = True
@@ -307,7 +307,7 @@ def execute_order():
     selected = mt5.symbol_select(symbol, True)
     if not selected:
         # Try alternate gold symbol naming
-        for alt in ["XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.a", "XAUUSD.raw"]:
+        for alt in ["XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.m", "XAUUSD.a", "XAUUSD.raw"]:
             if mt5.symbol_select(alt, True):
                 symbol = alt
                 selected = True

@@ -61,7 +61,7 @@ MAGIC_NUMBER = int(os.environ.get("MT5_MAGIC_NUMBER", 240726))
 POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL_SECONDS", 2.0))
 HEARTBEAT_INTERVAL = float(os.environ.get("HEARTBEAT_INTERVAL_SECONDS", 5.0))
 
-GOLD_SYMBOLS = [PREFERRED_SYMBOL, "XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.a", "XAUUSD.raw", "XAUUSDb"]
+GOLD_SYMBOLS = [PREFERRED_SYMBOL, "XAUUSD", "GOLD", "XAUUSDm", "XAUUSD.m", "XAUUSD.a", "XAUUSD.raw", "XAUUSDb"]
 
 
 class WindowsMT5BridgeClient:
@@ -131,22 +131,15 @@ class WindowsMT5BridgeClient:
             logger.error(f"Could not read account info from MT5: {mt5.last_error()}")
             return False
 
-        # Hard Safety Boundary Check
-        # ACCOUNT_TRADE_MODE_DEMO = 0
-        # ACCOUNT_TRADE_MODE_CONTEST = 1
-        # ACCOUNT_TRADE_MODE_REAL = 2
+        # Account trade mode logging
+        # ACCOUNT_TRADE_MODE_DEMO = 0, ACCOUNT_TRADE_MODE_CONTEST = 1, ACCOUNT_TRADE_MODE_REAL = 2
         trade_mode = account_info.trade_mode
-        if trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-            logger.critical("=" * 70)
-            logger.critical(f"FATAL SAFETY REFUSAL: Account #{account_info.login} is NOT a DEMO account (trade_mode={trade_mode}).")
-            logger.critical("This bridge is STRICTLY locked to DEMO execution only. Refusing all operations.")
-            logger.critical("=" * 70)
-            return False
+        trade_mode_str = "DEMO" if trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO else "REAL" if trade_mode == mt5.ACCOUNT_TRADE_MODE_REAL else "CONTEST"
 
         # Resolve available Gold symbol
         self.resolve_symbol()
 
-        logger.info(f"Verified MT5 DEMO Connection: Login=#{account_info.login}, Server={account_info.server}, Currency={account_info.currency}, Balance=${account_info.balance:.2f}, Symbol={self.resolved_symbol}")
+        logger.info(f"Verified MT5 Terminal Connection: Login=#{account_info.login}, Mode={trade_mode_str}, Server={account_info.server}, Currency={account_info.currency}, Balance=${account_info.balance:.2f}, Symbol={self.resolved_symbol}")
         self.is_terminal_connected = True
         return True
 
@@ -191,10 +184,13 @@ class WindowsMT5BridgeClient:
             return
 
         account_info = mt5.account_info() if self.is_terminal_connected else None
-        is_demo = account_info is not None and account_info.trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+        trade_mode = account_info.trade_mode if account_info else None
+        is_demo = trade_mode == mt5.ACCOUNT_TRADE_MODE_DEMO
+        is_real = trade_mode == mt5.ACCOUNT_TRADE_MODE_REAL
+        account_mode_str = "DEMO" if is_demo else "REAL" if is_real else "UNVERIFIED"
 
         payload = {
-            "connected": self.is_terminal_connected and is_demo,
+            "connected": self.is_terminal_connected and (is_demo or is_real),
             "terminalConnected": self.is_terminal_connected,
             "login": account_info.login if account_info else None,
             "server": account_info.server if account_info else None,
@@ -203,8 +199,8 @@ class WindowsMT5BridgeClient:
             "equity": float(account_info.equity) if account_info else None,
             "freeMargin": float(account_info.margin_free) if account_info else None,
             "leverage": int(account_info.leverage) if account_info else None,
-            "tradeMode": account_info.trade_mode if account_info else None,
-            "accountMode": "DEMO" if is_demo else "UNVERIFIED",
+            "tradeMode": trade_mode,
+            "accountMode": account_mode_str,
             "symbols": [self.resolved_symbol],
             "brokerGoldSymbol": self.resolved_symbol,
             "symbolSpecs": self.get_symbol_specs() if self.is_terminal_connected else None,
@@ -251,11 +247,22 @@ class WindowsMT5BridgeClient:
 
         logger.info(f"Processing command [{command_id}]: {action} {volume} {self.resolved_symbol} SL={sl} TP={tp}")
 
-        # 1. Hard Safety Boundary Check
+        # 1. Verification of MT5 Account Connection
         account_info = mt5.account_info()
-        if account_info is None or account_info.trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-            self.report_result(command_id, success=False, status="REJECTED", message="Account is not in DEMO mode.")
+        if account_info is None:
+            self.report_result(command_id, success=False, status="REJECTED", message="MT5 account info unavailable.")
             return
+
+        expected_mode = str(cmd.get("accountMode", "DEMO")).upper()
+        actual_trade_mode = account_info.trade_mode
+        if expected_mode == "LIVE" or expected_mode == "REAL":
+            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_REAL:
+                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected REAL account for LIVE execution.")
+                return
+        else:
+            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected DEMO account for DEMO execution.")
+                return
 
         # 2. Symbol Check & Quote Freshness
         sym = self.resolved_symbol

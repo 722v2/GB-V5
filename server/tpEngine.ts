@@ -760,11 +760,12 @@ export function calculateDynamicTakeProfits(req: DynamicTpRequest): DynamicTpRes
     }
     minRequiredRr = req.minRr;
   }
-  const minTargetDistance = Number((slDistance * minRequiredRr).toFixed(2));
+  const minStructuralDistance = Number((slDistance * 1.0).toFixed(2));
+  const minSyntheticDistance = Number((slDistance * minRequiredRr).toFixed(2));
 
-  const sub1rStructuralObstacles = structuralCandidates.filter((c) => c.distance < minTargetDistance - 0.001);
-  const validStructuralTargets = structuralCandidates.filter((c) => c.distance >= minTargetDistance - 0.001);
-  const validSyntheticTargets = syntheticCandidates.filter((c) => c.distance >= minTargetDistance - 0.001);
+  const sub1rStructuralObstacles = structuralCandidates.filter((c) => c.distance < minStructuralDistance - 0.001);
+  const validStructuralTargets = structuralCandidates.filter((c) => c.distance >= minStructuralDistance - 0.001);
+  const validSyntheticTargets = syntheticCandidates.filter((c) => c.distance >= minSyntheticDistance - 0.001);
 
   let selectedTp1: StructuralLevel | null = null;
   if (validStructuralTargets.length > 0) {

@@ -2,6 +2,8 @@ import { spawnSync } from 'child_process';
 import path from 'path';
 
 const testFiles = [
+  'tests/brainSignalUnificationRegression.test.ts',
+  'tests/mt5BridgeAndDemoTradingRegression.test.ts',
   'tests/comprehensiveRepairsRegression.test.ts',
   'tests/opportunityDetectionAuditRegression.test.ts',
   'tests/tpSelectionRegression.test.ts',
@@ -17,6 +19,7 @@ const testFiles = [
   'tests/indicatorMathQualityRegression.test.ts',
   'tests/confidenceCalibrationAndPartitioning.test.ts',
   'tests/s12S10S8PrecisionRegression.test.ts',
+  'tests/adminAndRouteSecurity.test.ts',
 ];
 
 console.log('====================================================');

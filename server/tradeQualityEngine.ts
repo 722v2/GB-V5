@@ -21,6 +21,7 @@ import {
 } from '../src/types.js';
 import { storage } from './storage.js';
 import { extractPriceActionEvidence } from './evidenceEngine.js';
+import { assessEntryLocationQuality } from './entryLocationQuality.js';
 
 // ============================================================================
 // GB-V5 LIFECYCLE & EXECUTION QUALITY ENGINE
@@ -88,9 +89,79 @@ export class PoiFreshnessTracker {
     return poi;
   }
 
-  public evaluatePoiFreshness(poi: PoiRecord | string): { state: PoiFreshnessState; penalty: number; isFresh: boolean; status?: string } {
-    const res = this.isFresh(poi);
-    return { ...res, status: res.state };
+  public evaluatePoiFreshness(
+    poi: PoiRecord | string,
+    candles?: Candle[],
+    currentPriceOrAtr?: number,
+    atrArg?: number
+  ): {
+    state: PoiFreshnessState;
+    tapCount: number;
+    isTradable: boolean;
+    penalty: number;
+    isFresh: boolean;
+    multiplier: number;
+    status: PoiFreshnessState;
+  } {
+    const id = typeof poi === 'string' ? poi : poi.id;
+    const p = this.pois.get(id);
+    if (!p) {
+      return {
+        state: 'FRESH',
+        tapCount: 0,
+        isTradable: true,
+        penalty: 0,
+        isFresh: true,
+        multiplier: 1.0,
+        status: 'FRESH',
+      };
+    }
+
+    if (candles && Array.isArray(candles)) {
+      for (const c of candles) {
+        if (!c) continue;
+        if (p.lastTestedCandleTime && c.timestamp <= p.lastTestedCandleTime) continue;
+        const enters = c.low <= (p.top + 0.1) && c.high >= (p.bottom - 0.1);
+        if (enters) {
+          p.tapCount = (p.tapCount || 0) + 1;
+          p.lastTestedCandleTime = c.timestamp;
+          if (p.type === 'DYNAMIC_MA') {
+            p.state = 'TESTED_ONCE';
+          } else {
+            if (p.tapCount === 1) p.state = 'TESTED_ONCE';
+            else if (p.tapCount === 2) p.state = 'TESTED_TWICE';
+            else p.state = 'EXHAUSTED';
+          }
+        }
+        if (p.type !== 'DYNAMIC_MA' && p.invalidationPrice !== undefined) {
+          if (p.direction === 'BULLISH' && c.close < p.invalidationPrice) {
+            p.state = 'INVALIDATED';
+          } else if (p.direction === 'BEARISH' && c.close > p.invalidationPrice) {
+            p.state = 'INVALIDATED';
+          }
+        }
+      }
+    }
+
+    const isMa = p.type === 'DYNAMIC_MA';
+    const state = isMa
+      ? (p.tapCount > 0 ? 'TESTED_ONCE' : 'FRESH')
+      : (p.state || (p.tapCount === 0 ? 'FRESH' : p.tapCount === 1 ? 'TESTED_ONCE' : p.tapCount === 2 ? 'TESTED_TWICE' : 'EXHAUSTED'));
+
+    const isTradable = isMa ? true : (state !== 'EXHAUSTED' && state !== 'INVALIDATED');
+    const penalty = state === 'TESTED_TWICE' ? 10 : state === 'EXHAUSTED' ? 25 : 0;
+    const isFresh = state === 'FRESH' || state === 'TESTED_ONCE';
+    const multiplier = isMa ? (p.tapCount <= 2 ? 1.0 : 0.9) : (state === 'FRESH' ? 1.0 : state === 'TESTED_ONCE' ? 0.95 : state === 'TESTED_TWICE' ? 0.85 : 0.0);
+
+    return {
+      state,
+      tapCount: p.tapCount || 0,
+      isTradable,
+      penalty,
+      isFresh,
+      multiplier,
+      status: state,
+    };
   }
 
   public getPoi(id: string): PoiRecord | undefined {
@@ -228,34 +299,122 @@ export function assessPriceActionTrigger(
   param7?: any,
   param8?: any
 ): TriggerAssessment {
-  let direction = 'BUY';
+  let direction: 'BUY' | 'SELL' = 'BUY';
   let candles5m: any[] = [];
-  let atr = 1.5;
+  let candles1m: any[] = [];
+  let ind5m: any = null;
 
-  if (typeof param1 === 'object' && param1 !== null) {
+  if (typeof param1 === 'object' && param1 !== null && !Array.isArray(param1)) {
     direction = param1.direction ?? 'BUY';
     candles5m = param1.candles5m ?? [];
-    atr = param1.indicators5m?.atr14 || 1.5;
+    candles1m = param1.candles1m ?? [];
+    ind5m = param1.indicators5m;
   } else if (typeof param1 === 'string') {
-    direction = param1;
+    direction = param1 as 'BUY' | 'SELL';
     candles5m = Array.isArray(param2) ? param2 : [];
-    atr = param4?.atr14 || 1.5;
+    candles1m = Array.isArray(param3) ? param3 : [];
+    ind5m = param4;
   }
 
-  const paEv = extractPriceActionEvidence(candles5m, atr);
+  // Filter to closed candles only (isClosed !== false)
+  const closed5m = candles5m.filter((c: any) => c && c.isClosed !== false);
+  const lastC = closed5m.length > 0 ? closed5m[closed5m.length - 1] : null;
+  const prevC = closed5m.length > 1 ? closed5m[closed5m.length - 2] : null;
 
-  const triggerType: PriceActionTriggerType =
-    paEv.rejectionDirection === direction ? 'REJECTION_WICK' : paEv.isEngulfing ? 'ENGULFING' : 'REJECTION_WICK';
+  const allTriggers: PriceActionTriggerType[] = [];
+  let hasHardPriceActionTrigger = false;
+  let primaryTrigger: PriceActionTriggerType = 'NONE';
+  let score = 0;
+  let description = 'No price action trigger detected';
+
+  // 1. Check 1M micro BOS if available (does NOT grant hard trigger on its own)
+  const closed1m = candles1m.filter((c: any) => c && c.isClosed !== false);
+  if (closed1m.length >= 2) {
+    if (direction === 'SELL') {
+      const brokePrevLow = closed1m.slice(-3).some((c, idx, arr) => idx > 0 && c.close < arr[idx - 1].low);
+      if (brokePrevLow) {
+        allTriggers.push('MICRO_BOS');
+      }
+    } else {
+      const brokePrevHigh = closed1m.slice(-3).some((c, idx, arr) => idx > 0 && c.close > arr[idx - 1].high);
+      if (brokePrevHigh) {
+        allTriggers.push('MICRO_BOS');
+      }
+    }
+  }
+
+  if (lastC) {
+    const range = Math.max(0.001, lastC.high - lastC.low);
+    const body = Math.abs(lastC.close - lastC.open);
+    const upperWick = lastC.high - Math.max(lastC.open, lastC.close);
+    const lowerWick = Math.min(lastC.open, lastC.close) - lastC.low;
+
+    // Rejection wick criteria
+    const isBuyRejection =
+      direction === 'BUY' &&
+      lowerWick >= 0.7 &&
+      lowerWick / range >= 0.35 &&
+      lowerWick > upperWick &&
+      (lastC.close - lastC.low) / range >= 0.40;
+
+    const isSellRejection =
+      direction === 'SELL' &&
+      upperWick >= 0.7 &&
+      upperWick / range >= 0.35 &&
+      upperWick > lowerWick &&
+      (lastC.high - lastC.close) / range >= 0.40;
+
+    // Engulfing or strong displacement criteria
+    const isBuyEngulfing =
+      direction === 'BUY' &&
+      ((prevC &&
+        prevC.close < prevC.open &&
+        lastC.close > lastC.open &&
+        (lastC.close >= prevC.open || lastC.close >= prevC.high - 0.2) &&
+        body / range >= 0.5) ||
+       (lastC.close > lastC.open &&
+        body / range >= 0.55 &&
+        (lastC.close - lastC.low) / range >= 0.65 &&
+        body >= 1.2 &&
+        (ind5m?.atr14 ? body >= 0.6 * ind5m.atr14 : true)));
+
+    const isSellEngulfing =
+      direction === 'SELL' &&
+      ((prevC &&
+        prevC.close > prevC.open &&
+        lastC.close < lastC.open &&
+        (lastC.close <= prevC.open || lastC.close <= prevC.low + 0.2) &&
+        body / range >= 0.5) ||
+       (lastC.close < lastC.open &&
+        body / range >= 0.55 &&
+        (lastC.high - lastC.close) / range >= 0.65 &&
+        body >= 1.2 &&
+        (ind5m?.atr14 ? body >= 0.6 * ind5m.atr14 : true)));
+
+    if (isBuyRejection || isSellRejection) {
+      primaryTrigger = 'REJECTION_WICK';
+      allTriggers.push('REJECTION_WICK');
+      hasHardPriceActionTrigger = true;
+      score = 25;
+      description = `Closed candle confirmed ${direction} rejection wick (${((isBuyRejection ? lowerWick : upperWick) / range * 100).toFixed(0)}%)`;
+    } else if (isBuyEngulfing || isSellEngulfing) {
+      primaryTrigger = 'ENGULFING';
+      allTriggers.push('ENGULFING');
+      hasHardPriceActionTrigger = true;
+      score = 25;
+      description = `Closed candle confirmed ${direction} engulfing / displacement pattern`;
+    }
+  }
 
   return {
-    hasTrigger: true,
-    hasHardPriceActionTrigger: true,
-    priceActionScore: paEv.rejectionQualityScore,
-    primaryTrigger: triggerType,
-    allTriggers: [triggerType],
+    hasTrigger: hasHardPriceActionTrigger,
+    hasHardPriceActionTrigger,
+    priceActionScore: score,
+    primaryTrigger,
+    allTriggers: allTriggers.length > 0 ? allTriggers : ['NONE'],
     triggerTimeframe: '5M',
-    confirmationScore: paEv.rejectionQualityScore,
-    description: paEv.description,
+    confirmationScore: score,
+    description,
   };
 }
 
@@ -279,24 +438,33 @@ export function assessStopLossQuality(
 ): { isProtected: boolean; isValid: boolean; slPoints: number; slScore: number; reason: string } {
   let entry = 2000;
   let stopLoss = 1995;
+  let minSlPoints = 35;
+  let maxSlPoints = 65;
+
   if (typeof param1 === 'object' && param1 !== null) {
-    entry = param1.entry ?? 2000;
-    stopLoss = param1.stopLoss ?? 1995;
+    entry = Number(param1.entry ?? 2000);
+    stopLoss = Number(param1.stopLoss ?? 1995);
+    minSlPoints = Number(param1.minSlPoints ?? param1.brokerSpecs?.minSlPoints ?? 35);
+    maxSlPoints = Number(param1.maxSlPoints ?? param1.brokerSpecs?.maxSlPoints ?? 65);
   } else if (typeof entryArg === 'number' && typeof slArg === 'number') {
     entry = entryArg;
     stopLoss = slArg;
+    if (typeof swingH === 'number' && typeof swingL === 'number') {
+      minSlPoints = swingH;
+      maxSlPoints = swingL;
+    }
   }
 
   const dist = Math.abs(entry - stopLoss);
   const slPts = Math.round((dist / 0.1) * 10) / 10;
-  const isOk = dist >= 3.0 && dist <= 9.0;
+  const isOk = slPts >= minSlPoints - 0.001 && slPts <= maxSlPoints + 0.001;
 
   return {
     isProtected: isOk,
     isValid: isOk,
     slPoints: slPts,
     slScore: isOk ? 20 : 10,
-    reason: 'Stop loss is structurally anchored with dynamic buffer',
+    reason: isOk ? 'Stop loss is structurally anchored with dynamic buffer' : `Stop loss ${slPts} pts outside bounds [${minSlPoints}, ${maxSlPoints}]`,
   };
 }
 
@@ -791,9 +959,14 @@ export function resolveFinalSignalConflict(
       const candDir = String(c.signal || c.direction || '').includes('BUY') ? 'BUY' : 'SELL';
       return candDir === activeDir;
     });
-    const suppressed = candidates.filter((c) => !valid.includes(c));
+    const suppressed = candidates
+      .filter((c) => !valid.includes(c))
+      .map((c) => ({
+        ...c,
+        reason: 'OPPOSING_ACTIVE_BLOCKED (Active trade exists in opposing direction)',
+      }));
     if (valid.length === 0) {
-      return { winningCandidate: null, suppressedCandidates: candidates, arbitrationReason: 'OPPOSING_ACTIVE_SIGNAL' };
+      return { winningCandidate: null, suppressedCandidates: suppressed, arbitrationReason: 'OPPOSING_ACTIVE_BLOCKED' };
     }
     return { winningCandidate: valid[0], suppressedCandidates: suppressed };
   }
@@ -883,7 +1056,7 @@ export function validateTradeSignalCandidate(
       return {
         isValid: false,
         score: 0,
-        rejectionReason: 'HTF_TREND_CONTRADICTION (Cannot execute trend continuation BUY against 1H Bearish Trend)',
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation BUY against 1H Bearish Trend)',
       };
     }
     if (
@@ -895,7 +1068,111 @@ export function validateTradeSignalCandidate(
       return {
         isValid: false,
         score: 0,
-        rejectionReason: 'HTF_TREND_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
+      };
+    }
+  }
+
+  // 1.2.1. Trend Continuation Quality Gate
+  const isTrendContinuation = String(signal.setupName || '').includes('Trend Continuation');
+  if (isTrendContinuation) {
+    const ind1h = context?.indicators1h;
+    const ind15m = context?.indicators15m;
+    const factors = signal.factorSnapshot?.factors || {};
+
+    // Rule 1: Contradiction with 1H Trend
+    if (signalDir === 'SELL' && (ind1h?.marketRegime === 'STRONG_UPTREND' || ind1h?.structure === 'BULLISH')) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
+      };
+    }
+    if (signalDir === 'BUY' && (ind1h?.marketRegime === 'STRONG_DOWNTREND' || ind1h?.structure === 'BEARISH')) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation BUY against 1H Bearish Trend)',
+      };
+    }
+
+    // Rule 2: Contradictory context (all 3 factors opposing)
+    const isDiscount = ind15m?.premiumDiscountZone === 'DISCOUNT' || factors.zone === 'DISCOUNT';
+    const isPremium = ind15m?.premiumDiscountZone === 'PREMIUM' || factors.zone === 'PREMIUM';
+    const hasBullishOb = ind15m?.orderBlock?.type === 'BULLISH' || factors.orderBlock === 'BULLISH_OB';
+    const hasBearishOb = ind15m?.orderBlock?.type === 'BEARISH' || factors.orderBlock === 'BEARISH_OB';
+    const hasBullishFvg = ind15m?.fvg?.type === 'BULLISH' || factors.fvg === 'BULLISH_FVG';
+    const hasBearishFvg = ind15m?.fvg?.type === 'BEARISH' || factors.fvg === 'BEARISH_FVG';
+
+    if (signalDir === 'SELL' && isDiscount && hasBullishOb && hasBullishFvg) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'CONTRADICTORY_BULLISH_CONTEXT_FOR_SELL_CONTINUATION (Zone is DISCOUNT with Bullish OB and Bullish FVG)',
+      };
+    }
+    if (signalDir === 'BUY' && isPremium && hasBearishOb && hasBearishFvg) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'CONTRADICTORY_BEARISH_CONTEXT_FOR_BUY_CONTINUATION (Zone is PREMIUM with Bearish OB and Bearish FVG)',
+      };
+    }
+
+    // Rule 3: H1 Ranging quality checks
+    if (ind1h?.structure === 'RANGING' || ind1h?.marketRegime === 'NORMAL_RANGE') {
+      const calcRr = tp1 > 0 && slDist > 0 ? Math.abs(tp1 - entry) / slDist : 0;
+      const effectiveRr = Number(signal.tp1Rr || signal.rrRatio || calcRr);
+      if (effectiveRr < 1.25) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: `TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires minimum 1.25 R:R, got ${effectiveRr.toFixed(2)})`,
+        };
+      }
+      // Rejection trigger check in H1 Ranging
+      const paTrigger = assessPriceActionTrigger(signalDir, context?.candles5m, context?.candles1m, context?.indicators5m);
+      if (!paTrigger.hasHardPriceActionTrigger) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: 'TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires closed M5 rejection candle)',
+        };
+      }
+    }
+  }
+
+  // 1.2.2. Entry Location Quality (ELQ) Hard Block
+  if (context?.candles5m && context?.indicators5m && context?.indicators15m && context?.indicators1h) {
+    const elq = assessEntryLocationQuality({
+      direction: signalDir,
+      family: signal.strategyFamily || signal.family || 'MARKET_STRUCTURE',
+      entry,
+      currentPrice: Number(context.currentPrice ?? entry),
+      candles5m: context.candles5m,
+      indicators5m: context.indicators5m,
+      indicators15m: context.indicators15m,
+      indicators1h: context.indicators1h,
+      explicitRetestLevel: signal.patternMetadata?.brokenLevel ?? signal.brokenLevel,
+      setupName: signal.setupName,
+    });
+    if (elq.hardBlocked) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: elq.rejectionReason || 'ENTRY_LOCATION_QUALITY_BLOCKED',
+      };
+    }
+  }
+
+  // 1.2.3. Price Action Trigger Hard Block (closed candle confirmation)
+  if (context?.candles5m && Array.isArray(context.candles5m) && context.candles5m.length > 0) {
+    const paTrigger = assessPriceActionTrigger(signalDir, context.candles5m, context?.candles1m, context?.indicators5m);
+    if (!paTrigger.hasHardPriceActionTrigger) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'MISSING_PRICE_ACTION_TRIGGER (No valid price action trigger confirmed on closed candles)',
       };
     }
   }

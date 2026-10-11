@@ -137,11 +137,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [activeSubTab]);
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const key = localStorage.getItem('gbv5_admin_key') || '';
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (key) {
+      headers['Authorization'] = `Bearer ${key}`;
+      headers['x-admin-key'] = key;
+    }
+    return headers;
+  };
+
   const handleTestTelegram = async () => {
     setIsTestingTelegram(true);
     setTelegramTestStatus({ type: null, message: '' });
     try {
-      const res = await fetch('/api/telegram/test', { method: 'POST' });
+      const res = await fetch('/api/telegram/test', { method: 'POST', headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setTelegramTestStatus({
@@ -169,7 +179,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setIsTestingMockSignal(true);
     setTelegramTestStatus({ type: null, message: '' });
     try {
-      const res = await fetch('/api/telegram/test-signal', { method: 'POST' });
+      const res = await fetch('/api/telegram/test-signal', { method: 'POST', headers: getAuthHeaders() });
       const data = await res.json();
       if (data.success) {
         setTelegramTestStatus({
@@ -867,8 +877,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="flex items-center gap-1.5 bg-stone-900 border border-stone-800 p-1 rounded-xl">
                   <button
                     type="button"
+                    onClick={() => setAccountMode('ANALYSIS')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
+                      accountMode === 'ANALYSIS'
+                        ? 'bg-amber-500 text-stone-950 shadow-sm'
+                        : 'text-stone-400 hover:text-stone-200'
+                    }`}
+                  >
+                    <span>🟡</span>
+                    <span>ANALYSIS</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setAccountMode('DEMO')}
-                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
                       accountMode === 'DEMO'
                         ? 'bg-cyan-500 text-stone-950 shadow-sm'
                         : 'text-stone-400 hover:text-stone-200'
@@ -881,24 +904,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      if (accountMode !== 'REAL') {
+                      if (accountMode !== 'REAL' && accountMode !== 'LIVE') {
                         setShowRealModal(true);
                       }
                     }}
-                    className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
-                      accountMode === 'REAL'
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black font-mono transition-all cursor-pointer ${
+                      accountMode === 'REAL' || accountMode === 'LIVE'
                         ? 'bg-rose-600 text-white shadow-sm animate-pulse'
                         : 'text-stone-400 hover:text-stone-200'
                     }`}
                   >
                     <span>🔴</span>
-                    <span>REAL</span>
+                    <span>REAL / LIVE</span>
                   </button>
                 </div>
               </div>
 
               {/* Account Mode Detailed Selection Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {/* ANALYSIS CARD */}
+                <button
+                  type="button"
+                  onClick={() => setAccountMode('ANALYSIS')}
+                  className={`p-3 rounded-xl border text-right transition-all cursor-pointer ${
+                    accountMode === 'ANALYSIS'
+                      ? 'bg-amber-950/50 border-amber-500/80 text-stone-100 shadow-md ring-1 ring-amber-500/30'
+                      : 'bg-stone-950/70 border-stone-800 text-stone-400 hover:border-stone-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm">🟡</span>
+                      <span className="font-bold text-xs font-mono text-amber-300">ANALYSIS ONLY</span>
+                    </div>
+                    <span
+                      className={`w-3 h-3 rounded-full border ${
+                        accountMode === 'ANALYSIS' ? 'bg-amber-400 border-amber-300' : 'bg-stone-800 border-stone-700'
+                      }`}
+                    />
+                  </div>
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    وضع تحليل وتوجيه محشور حصراً. يحلل السوق وينتج الإشارات دون أي إرسال أوامر صفقات نهائياً.
+                  </p>
+                  <div className="mt-2 flex items-center gap-1.5 text-[9px] text-amber-300 font-mono">
+                    <span>🚫 إرسال الأوامر معطل</span>
+                  </div>
+                </button>
                 {/* DEMO CARD */}
                 <button
                   type="button"

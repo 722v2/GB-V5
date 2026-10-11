@@ -101,9 +101,15 @@ export function parseAndValidateAiResponse(rawContent: any): {
     throw new Error(`Invalid signal value "${parsed.signal}" in AI response`);
   }
 
-  const normalizedConfidence = typeof parsed.confidence === 'number' && Number.isFinite(parsed.confidence)
-    ? Math.min(100, Math.max(0, parsed.confidence))
-    : 75;
+  if (
+    typeof parsed.confidence !== 'number' ||
+    !Number.isFinite(parsed.confidence) ||
+    parsed.confidence < 0 ||
+    parsed.confidence > 100
+  ) {
+    throw new Error('Invalid "confidence" field in AI response: must be a number between 0 and 100');
+  }
+  const normalizedConfidence = parsed.confidence;
 
   return {
     signal: upperSignal as SignalDecision,
@@ -430,26 +436,122 @@ export async function runAIAnalysis(input: MarketAnalysisInput): Promise<TradeSi
 
 export function resolveAiSignalWithDeterministicFallback(
   aiParsed: any,
-  multiResult: { allCandidates: SetupCandidate[] },
+  multiResult: { selectedCandidate?: SetupCandidate; allCandidates: SetupCandidate[] },
   input: MarketAnalysisInput
-): { signal: SignalDecision; noTradeReason?: string; confidence: number } {
+): any {
+  const best = (multiResult as any)?.selectedCandidate || (multiResult?.allCandidates?.length > 0 ? multiResult.allCandidates[0] : null);
+
+  const isAiValidTrade =
+    aiParsed &&
+    aiParsed.signal &&
+    aiParsed.signal !== 'NO TRADE' &&
+    typeof aiParsed.confidence === 'number' &&
+    aiParsed.confidence >= 70;
+
+  if (isAiValidTrade) {
+    const direction: 'BUY' | 'SELL' = aiParsed.signal.includes('BUY') ? 'BUY' : 'SELL';
+    const entry = aiParsed.entry ?? input.currentPrice;
+    const stopLoss = aiParsed.stopLoss ?? (direction === 'BUY' ? entry - 5 : entry + 5);
+    const tp1 = aiParsed.tp1 ?? (direction === 'BUY' ? entry + 7.5 : entry - 7.5);
+    const slDist = Math.abs(entry - stopLoss);
+    const tp1Dist = Math.abs(tp1 - entry);
+    const tp1Rr = slDist > 0 ? tp1Dist / slDist : 1.5;
+
+    return {
+      id: `sig_ai_${Date.now()}`,
+      timestamp: Date.now(),
+      asset: input.asset,
+      signal: aiParsed.signal as SignalDecision,
+      direction: aiParsed.signal,
+      currentPrice: input.currentPrice,
+      entry,
+      stopLoss,
+      slPoints: Math.round((slDist / 0.1) * 10) / 10,
+      tp1,
+      tp1Points: Math.round((tp1Dist / 0.1) * 10) / 10,
+      tp1Rr,
+      tp1RrString: `1:${tp1Rr.toFixed(2)}`,
+      confidence: aiParsed.confidence,
+      strategyConfidence: aiParsed.confidence,
+      timeframe: aiParsed.timeframe || '15M / 5M',
+      setup: aiParsed.setup || 'AI Validated Setup',
+      mainReasons: Array.isArray(aiParsed.mainReasons) ? aiParsed.mainReasons : ['AI Validated Setup'],
+      invalidation: aiParsed.invalidation || 'Break of structural invalidation level',
+    };
+  }
+
+  // AI gave NO TRADE or sub-floor confidence (< 70)
+  if (best) {
+    // Fallback execution MUST preserve the deterministic candidate
+    const direction: 'BUY' | 'SELL' = best.direction === 'BUY' ? 'BUY' : 'SELL';
+    const decision: SignalDecision = best.direction === 'BUY'
+      ? (best.orderType === 'LIMIT' ? 'BUY LIMIT' : 'BUY NOW')
+      : (best.orderType === 'LIMIT' ? 'SELL LIMIT' : 'SELL NOW');
+    const slDist = Math.abs(best.entry - best.stopLoss);
+    const tp1Dist = Math.abs(best.tp1 - best.entry);
+    const tp1Rr = best.tp1Rr || (slDist > 0 ? tp1Dist / slDist : 1.5);
+
+    const reasons = [
+      ...(best.mainReasons || []),
+      'تنفيذ احتياطي حتمي (تجاوز فيتو AI غير المبرر: deterministic fallback)',
+    ];
+
+    return {
+      id: `sig_fallback_${Date.now()}`,
+      timestamp: Date.now(),
+      asset: input.asset,
+      signal: decision,
+      direction: decision,
+      currentPrice: input.currentPrice,
+      entry: best.entry,
+      stopLoss: best.stopLoss,
+      slPoints: best.slPoints || Math.round((slDist / 0.1) * 10) / 10,
+      tp1: best.tp1,
+      tp1Points: best.tp1Points || Math.round((tp1Dist / 0.1) * 10) / 10,
+      tp1Rr,
+      tp1RrString: `1:${tp1Rr.toFixed(2)}`,
+      tp2: best.tp2,
+      tp2Points: best.tp2Points,
+      tp2Rr: best.tp2Rr,
+      tp2RrString: best.tp2Rr ? `1:${best.tp2Rr.toFixed(2)}` : undefined,
+      confidence: best.confidence,
+      strategyConfidence: best.confidence,
+      timeframe: best.timeframe,
+      setup: best.setupName,
+      mainReasons: reasons,
+      invalidation: best.invalidation,
+      noTradeReason: undefined,
+    };
+  }
+
+  // No deterministic fallback candidate and AI gave no trade or sub-floor confidence
   if (aiParsed && typeof aiParsed.confidence === 'number' && aiParsed.confidence < 70) {
     return {
-      signal: 'NO TRADE',
+      id: `sig_${Date.now()}_notrade`,
+      timestamp: Date.now(),
+      asset: input.asset,
+      signal: 'NO TRADE' as SignalDecision,
       confidence: 0,
+      currentPrice: input.currentPrice,
+      entry: input.currentPrice,
+      stopLoss: input.currentPrice,
+      tp1: input.currentPrice,
+      mainReasons: ['الحد الأدنى للثقة غير محقق (أقل من 70%)'],
       noTradeReason: 'الحد الأدنى للثقة غير محقق (أقل من 70%)',
     };
   }
-  const best = multiResult?.allCandidates?.length > 0 ? multiResult.allCandidates[0] : null;
-  if (best) {
-    return {
-      signal: best.direction === 'BUY' ? 'BUY NOW' : 'SELL NOW',
-      confidence: best.confidence,
-    };
-  }
+
   return {
-    signal: 'NO TRADE',
+    id: `sig_${Date.now()}_notrade`,
+    timestamp: Date.now(),
+    asset: input.asset,
+    signal: 'NO TRADE' as SignalDecision,
     confidence: 0,
-    noTradeReason: 'لا توجد فرصة مطابقة',
+    currentPrice: input.currentPrice,
+    entry: input.currentPrice,
+    stopLoss: input.currentPrice,
+    tp1: input.currentPrice,
+    mainReasons: ['لا توجد فرصة مطابقة لشروط التداول الآمن'],
+    noTradeReason: aiParsed?.noTradeReason || 'لا توجد فرصة مطابقة لشروط التداول الآمن',
   };
 }
