@@ -113,6 +113,7 @@ console.log('\n--- 2. MSS After Liquidity Sweep in S4 ---');
     candles1h: candles,
     candles15m: candles,
     candles5m: candles,
+    candles1m: candles,
     losingStreak: 0,
     brokerSpecs: { minRr: 1.0, minConfidence: 70 } as any,
   });

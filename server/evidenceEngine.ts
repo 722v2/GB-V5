@@ -147,8 +147,11 @@ export function extractPriceActionEvidence(candles: Candle[], atr: number): Pric
   const bodyAtr = atr > 0 ? body / atr : 0;
   const closeLoc = ((last.close - last.low) / range) * 100;
 
-  const hasLowerRejection = lowerWickPct >= 0.35 || (last.close > last.open && lowerWickPct >= 0.25);
-  const hasUpperRejection = upperWickPct >= 0.35 || (last.close < last.open && upperWickPct >= 0.25);
+  const minMeaningfulRange = atr > 0 ? atr * 0.15 : 0.25;
+  const isMeaningfulRange = range >= minMeaningfulRange;
+
+  const hasLowerRejection = isMeaningfulRange && (lowerWickPct >= 0.35 || (last.close > last.open && lowerWickPct >= 0.25));
+  const hasUpperRejection = isMeaningfulRange && (upperWickPct >= 0.35 || (last.close < last.open && upperWickPct >= 0.25));
 
   const isBull = last.close > last.open;
   const prevBull = prev.close > prev.open;

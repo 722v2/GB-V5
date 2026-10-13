@@ -76,9 +76,16 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
 
     try {
       console.log('[Backtest] Executing realistic simulation...', { initialCapital: finalCap, timeRange, allowAvailableSlice: safeAllowSlice });
+      const adminKey = typeof window !== 'undefined' ? (localStorage.getItem('gbv5_admin_key') || '') : '';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (adminKey) {
+        headers['Authorization'] = `Bearer ${adminKey}`;
+        headers['x-admin-key'] = adminKey;
+      }
+
       const res = await fetch('/api/backtest/run', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           initialCapital: finalCap,
           timeRange,
@@ -87,6 +94,9 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
       });
 
       if (!res.ok) {
+        if (res.status === 401 || res.status === 503) {
+          throw new Error('مطلوب تسجيل الدخول بمفتاح الإدارة (Admin API Key) في الإعدادات لتشغيل الـBacktest.');
+        }
         const errData = await res.json().catch(() => ({ error: `Server error (HTTP ${res.status})` }));
         if (errData.validationReport) {
           setValidationAudit(errData.validationReport);

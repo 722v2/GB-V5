@@ -87,6 +87,54 @@ export interface Gbv5BrainResult {
   evidenceBundle: Gbv5EvidenceBundle;
 }
 
+export function computeGbv5CandidateQualityScore(c: Gbv5Candidate): number {
+  const confluence = typeof c.confluenceScore === 'number' && Number.isFinite(c.confluenceScore) ? c.confluenceScore : 0;
+  const rrMultiplier = typeof c.tp1Rr === 'number' && Number.isFinite(c.tp1Rr) && c.tp1Rr >= 2.0 ? 1.1 : 1.0;
+  return confluence * rrMultiplier;
+}
+
+export function compareGbv5CandidatesByQuality(a: Gbv5Candidate, b: Gbv5Candidate): number {
+  // 1. Primary GB-V5 ranking score: confluenceScore * (tp1Rr >= 2.0 ? 1.1 : 1.0)
+  const scoreA = computeGbv5CandidateQualityScore(a);
+  const scoreB = computeGbv5CandidateQualityScore(b);
+  if (Math.abs(scoreB - scoreA) > 1e-6) {
+    return scoreB - scoreA;
+  }
+
+  // 2. Tie-break: raw confidence (higher is better)
+  const confDiff = (b.confidence ?? 0) - (a.confidence ?? 0);
+  if (Math.abs(confDiff) > 1e-6) {
+    return confDiff;
+  }
+
+  // 3. Tie-break: TP1 reward-to-risk ratio (higher is better)
+  const tp1RrDiff = (b.tp1Rr ?? 0) - (a.tp1Rr ?? 0);
+  if (Math.abs(tp1RrDiff) > 1e-6) {
+    return tp1RrDiff;
+  }
+
+  // 4. Tie-break: TP2 reward-to-risk ratio (higher is better)
+  const tp2RrDiff = (b.tp2Rr ?? 0) - (a.tp2Rr ?? 0);
+  if (Math.abs(tp2RrDiff) > 1e-6) {
+    return tp2RrDiff;
+  }
+
+  // 5. Tie-break: raw unweighted confluence score (higher is better)
+  const rawScoreDiff = (b.confluenceScore ?? 0) - (a.confluenceScore ?? 0);
+  if (Math.abs(rawScoreDiff) > 1e-6) {
+    return rawScoreDiff;
+  }
+
+  // 6. Strict deterministic tie-breaker on stable strings
+  const familyCmp = (a.family || '').localeCompare(b.family || '');
+  if (familyCmp !== 0) return familyCmp;
+
+  const nameCmp = (a.setupName || '').localeCompare(b.setupName || '');
+  if (nameCmp !== 0) return nameCmp;
+
+  return (a.direction || '').localeCompare(b.direction || '');
+}
+
 // ============================================================================
 // CANDIDATE DISCOVERY — THE FOUR CANONICAL FAMILIES
 // ============================================================================
@@ -115,31 +163,7 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
   const rawAtr15m = indicators15m?.atr14 ?? indicators15m?.atr;
   const atr15m = (typeof rawAtr15m === 'number' && rawAtr15m > 0 && isFinite(rawAtr15m)) ? rawAtr15m : 0;
 
-  let effective1m = candles1m;
-  if ((!effective1m || !Array.isArray(effective1m) || effective1m.length === 0) && Array.isArray(candles5m) && candles5m.length > 0) {
-    const synth: Candle[] = [];
-    for (const c of candles5m) {
-      const isBull = c.close >= c.open;
-      const delta = c.close - c.open;
-      const t = c.timestamp;
-      for (let m = 0; m < 5; m++) {
-        const fracStart = m / 5;
-        const fracEnd = (m + 1) / 5;
-        const mOpen = c.open + delta * fracStart;
-        const mClose = c.open + delta * fracEnd;
-        synth.push({
-          timestamp: t + m * 60000,
-          open: Number(mOpen.toFixed(2)),
-          high: Number(Math.max(mOpen, mClose, m === 0 && !isBull ? c.high : m === 4 && isBull ? c.high : (mOpen + mClose) / 2 + 0.1).toFixed(2)),
-          low: Number(Math.min(mOpen, mClose, m === 0 && isBull ? c.low : m === 4 && !isBull ? c.low : (mOpen + mClose) / 2 - 0.1).toFixed(2)),
-          close: Number(mClose.toFixed(2)),
-          volume: Math.round((c.volume || 100) / 5),
-          isClosed: c.isClosed !== false,
-        });
-      }
-    }
-    effective1m = synth;
-  }
+  const effective1m = Array.isArray(candles1m) ? candles1m : [];
 
   const partition1m = partition1mCandles(effective1m);
   const closed1m = partition1m.closedCandles || [];
@@ -461,8 +485,9 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
       if (c) candidates.push(c);
     }
 
-    // MSS / CHoCH reversal setup
-    const mssDetected = structEv.hasChoch || Boolean(indicators5m?.mssDetected) || Boolean(indicators15m?.mssDetected);
+    // MSS / CHoCH reversal setup requires M1 price action trigger (displacement, rejection wick, or engulfing)
+    const mssDetected = (structEv.hasChoch || Boolean(indicators5m?.mssDetected) || Boolean(indicators15m?.mssDetected)) &&
+      (paM1.hasDisplacement || paM1.hasRejectionWick || paM1.isEngulfing);
     if (mssDetected) {
       const mssDir: 'BUY' | 'SELL' = (indicators5m?.mssDirection || indicators15m?.mssDirection || structEv.chochDirection) === 'BEARISH' ? 'SELL' : 'BUY';
       const c = constructCandidate({
@@ -505,6 +530,9 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
     // Minimum history required: At least 3 closed M1 candles to observe pullback + continuation trigger
     const hasMinCandleHistory = closed1m.length >= 3;
 
+    // Minimum dip/rally required to qualify as meaningful pullback structure (filters micro-tick noise)
+    const minPullbackDip = atr5m > 0 ? atr5m * 0.15 : 0.3;
+
     // BUY: Evidence of preceding countertrend retracement or pullback structure on M1
     // Must be observed in candles preceding the continuation trigger (last1m).
     // Tiny open vs close price differences do NOT qualify as pullback evidence.
@@ -514,8 +542,8 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
       for (let i = lookbackStart; i < closed1m.length - 1; i++) {
         const curr = closed1m[i];
         const prev = closed1m[i - 1];
-        // Identifiable countertrend retracement: bearish candle or distinct lower low/dip
-        if (curr.close < curr.open || curr.low < prev.low) {
+        // Identifiable countertrend retracement: bearish candle or distinct lower low/dip exceeding noise threshold
+        if (curr.close < curr.open - minPullbackDip || curr.low < prev.low - minPullbackDip) {
           hasBullPullbackStructure = true;
           break;
         }
@@ -524,7 +552,7 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
 
     // Subsequent M1 continuation trigger: last1m closes in intended direction or shows rejection
     const m1BullContinuationTrigger =
-      last1m.close > last1m.open || paM1.rejectionDirection === 'BULLISH';
+      last1m.close > (last1m.open + minPullbackDip) || paM1.rejectionDirection === 'BULLISH';
 
     const m1BullPullback = hasHtfBullBias && hasMinCandleHistory && hasBullPullbackStructure && m1BullContinuationTrigger;
 
@@ -560,8 +588,8 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
       for (let i = lookbackStart; i < closed1m.length - 1; i++) {
         const curr = closed1m[i];
         const prev = closed1m[i - 1];
-        // Identifiable countertrend retracement: bullish candle or distinct higher high/rally
-        if (curr.close > curr.open || curr.high > prev.high) {
+        // Identifiable countertrend retracement: bullish candle or distinct higher high/rally exceeding noise threshold
+        if (curr.close > curr.open + minPullbackDip || curr.high > prev.high + minPullbackDip) {
           hasBearPullbackStructure = true;
           break;
         }
@@ -570,7 +598,7 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
 
     // Subsequent M1 continuation trigger: last1m closes in intended direction or shows rejection
     const m1BearContinuationTrigger =
-      last1m.close < last1m.open || paM1.rejectionDirection === 'BEARISH';
+      last1m.close < (last1m.open - minPullbackDip) || paM1.rejectionDirection === 'BEARISH';
 
     const m1BearPullback = hasHtfBearBias && hasMinCandleHistory && hasBearPullbackStructure && m1BearContinuationTrigger;
 
@@ -678,7 +706,18 @@ export function discoverGbv5Candidates(input: Gbv5BrainInput): {
     }
   }
 
-  return { candidates, evidenceBundle };
+  // Deduplicate genuinely equivalent candidates using grounded structural identity (family + setupName + direction)
+  const candidateMap = new Map<string, Gbv5Candidate>();
+  for (const c of candidates) {
+    const key = `${c.family}_${c.setupName}_${c.direction}`;
+    const existing = candidateMap.get(key);
+    if (!existing || compareGbv5CandidatesByQuality(c, existing) < 0) {
+      candidateMap.set(key, c);
+    }
+  }
+
+  const deduplicatedCandidates = Array.from(candidateMap.values());
+  return { candidates: deduplicatedCandidates, evidenceBundle };
 }
 
 // ============================================================================
@@ -746,12 +785,8 @@ export async function executeGbv5Brain(input: Gbv5BrainInput): Promise<Gbv5Brain
     eligible = eligible.filter((c) => c.direction === activeTradeDirection);
   }
 
-  // Sort by Confluence Score * TP1 RR Efficiency
-  eligible.sort((a, b) => {
-    const scoreA = a.confluenceScore * (a.tp1Rr >= 2.0 ? 1.1 : 1.0);
-    const scoreB = b.confluenceScore * (b.tp1Rr >= 2.0 ? 1.1 : 1.0);
-    return scoreB - scoreA;
-  });
+  // Deterministically rank all discovered eligible candidates by quality using shared multi-tier tie-breaking contract
+  eligible.sort(compareGbv5CandidatesByQuality);
 
   const selected = eligible.length > 0 ? eligible[0] : null;
 

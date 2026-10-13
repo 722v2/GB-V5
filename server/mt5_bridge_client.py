@@ -234,10 +234,417 @@ class WindowsMT5BridgeClient:
         except Exception as e:
             logger.debug(f"Command polling network error: {e}")
 
+    def validate_account_mode_gate(self, cmd: Dict[str, Any], command_id: str, account_info: Any) -> bool:
+        """Validates expected account mode against actual MT5 terminal trade_mode."""
+        expected_mode = str(cmd.get("accountMode", "DEMO")).strip().upper()
+        if expected_mode == "REAL":
+            expected_mode = "LIVE"
+
+        actual_trade_mode = getattr(account_info, "trade_mode", None)
+        live_execution_configured = os.environ.get("MT5_LIVE_EXECUTION_ENABLED", "").strip().lower() == "true"
+
+        if actual_trade_mode not in (mt5.ACCOUNT_TRADE_MODE_DEMO, mt5.ACCOUNT_TRADE_MODE_REAL):
+            logger.error(f"[{command_id}] Unverified or unsupported trade_mode: {actual_trade_mode}")
+            self.report_result(command_id, success=False, status="REJECTED", message=f"Unverified or unsupported MT5 trade_mode: {actual_trade_mode}.")
+            return False
+
+        if expected_mode == "LIVE":
+            if not live_execution_configured:
+                logger.error(f"[{command_id}] LIVE/REAL execution BLOCKED by client safety policy: MT5_LIVE_EXECUTION_ENABLED is not set to true.")
+                self.report_result(command_id, success=False, status="REJECTED", message="LIVE/REAL execution blocked: MT5_LIVE_EXECUTION_ENABLED is not configured.")
+                return False
+
+            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_REAL:
+                logger.error(f"[{command_id}] Account mismatch: Expected REAL account for LIVE execution, got trade_mode={actual_trade_mode}.")
+                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected REAL account for LIVE execution.")
+                return False
+        elif expected_mode == "DEMO":
+            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+                logger.error(f"[{command_id}] Account mismatch: Expected DEMO account for DEMO execution, got trade_mode={actual_trade_mode}.")
+                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected DEMO account for DEMO execution.")
+                return False
+        else:
+            logger.error(f"[{command_id}] Execution REJECTED: Unsupported or unverified accountMode '{expected_mode}'.")
+            self.report_result(command_id, success=False, status="REJECTED", message=f"Unsupported or unverified accountMode: {expected_mode}.")
+            return False
+
+        return True
+
+    def execute_modify_command(self, cmd: Dict[str, Any], command_id: str):
+        """Modifies protective SL/TP on an existing open position or pending order."""
+        ticket = int(cmd.get("ticket") or 0)
+        if ticket <= 0:
+            self.report_result(command_id, success=False, status="REJECTED", message="Order ticket is required for MODIFY.")
+            return
+
+        sl = float(cmd.get("sl", 0.0))
+        tp = float(cmd.get("tp", 0.0))
+
+        account_info = mt5.account_info()
+        if account_info is None:
+            self.report_result(command_id, success=False, status="REJECTED", message="MT5 account info unavailable.")
+            return
+
+        if not self.validate_account_mode_gate(cmd, command_id, account_info):
+            return
+
+        # Check open positions
+        pos = mt5.positions_get(ticket=ticket)
+        if pos and len(pos) > 0:
+            p = pos[0]
+            symbol = p.symbol
+            tick = mt5.symbol_info_tick(symbol)
+            current_price = tick.bid if p.type == mt5.POSITION_TYPE_BUY else tick.ask if tick else float(p.price_open)
+
+            # Check symbol allowlist
+            if not any(symbol.upper().startswith(s.upper()) for s in GOLD_SYMBOLS):
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    message=f"Symbol {symbol} is not in the allowed symbol list."
+                )
+                return
+
+            # Determine new SL/TP values (allow 0 to remove SL/TP if explicitly requested)
+            new_sl = sl if "sl" in cmd and cmd["sl"] is not None else float(p.sl)
+            new_tp = tp if "tp" in cmd and cmd["tp"] is not None else float(p.tp)
+
+            # Idempotency check: If position already has requested SL and TP, avoid redundant order_send
+            if abs(float(p.sl) - new_sl) < 1e-4 and abs(float(p.tp) - new_tp) < 1e-4:
+                logger.info(f"Position #{ticket} SL/TP is already set to SL={new_sl}, TP={new_tp}. Idempotent no-op.")
+                self.report_result(
+                    command_id,
+                    success=True,
+                    status="FILLED",
+                    positionTicket=ticket,
+                    retcode=mt5.TRADE_RETCODE_DONE,
+                    message=f"Position #{ticket} SL/TP is already set to requested parameters."
+                )
+                return
+
+            # Directional SL/TP Validation
+            is_buy = p.type == mt5.POSITION_TYPE_BUY
+            if new_sl > 0:
+                if is_buy and new_sl >= current_price:
+                    self.report_result(command_id, success=False, status="REJECTED", message=f"BUY position SL ({new_sl}) must be below current price ({current_price}).")
+                    return
+                elif not is_buy and new_sl <= current_price:
+                    self.report_result(command_id, success=False, status="REJECTED", message=f"SELL position SL ({new_sl}) must be above current price ({current_price}).")
+                    return
+
+            if new_tp > 0:
+                if is_buy and new_tp <= current_price:
+                    self.report_result(command_id, success=False, status="REJECTED", message=f"BUY position TP ({new_tp}) must be above current price ({current_price}).")
+                    return
+                elif not is_buy and new_tp >= current_price:
+                    self.report_result(command_id, success=False, status="REJECTED", message=f"SELL position TP ({new_tp}) must be below current price ({current_price}).")
+                    return
+
+            # Broker stops_level & freeze_level checks if available
+            sym_info = mt5.symbol_info(symbol)
+            if sym_info and hasattr(sym_info, "point"):
+                pt = float(getattr(sym_info, "point", 0.01))
+                stops_lvl = int(getattr(sym_info, "trade_stops_level", 0))
+                freeze_lvl = int(getattr(sym_info, "trade_freeze_level", 0))
+
+                if stops_lvl > 0 and pt > 0:
+                    min_dist = stops_lvl * pt
+                    if new_sl > 0 and abs(new_sl - current_price) < min_dist:
+                        self.report_result(command_id, success=False, status="REJECTED", message=f"SL distance ({abs(new_sl - current_price):.2f}) is closer than broker stops_level ({min_dist:.2f}).")
+                        return
+                    if new_tp > 0 and abs(new_tp - current_price) < min_dist:
+                        self.report_result(command_id, success=False, status="REJECTED", message=f"TP distance ({abs(new_tp - current_price):.2f}) is closer than broker stops_level ({min_dist:.2f}).")
+                        return
+
+                if freeze_lvl > 0 and pt > 0:
+                    freeze_dist = freeze_lvl * pt
+                    if abs(current_price - float(p.price_open)) <= freeze_dist:
+                        self.report_result(command_id, success=False, status="REJECTED", message=f"Current price ({current_price:.2f}) is within broker freeze_level ({freeze_dist:.2f}) of position open price.")
+                        return
+                    if float(p.sl) > 0 and abs(current_price - float(p.sl)) <= freeze_dist:
+                        self.report_result(command_id, success=False, status="REJECTED", message=f"Current price ({current_price:.2f}) is within broker freeze_level ({freeze_dist:.2f}) of existing SL.")
+                        return
+                    if float(p.tp) > 0 and abs(current_price - float(p.tp)) <= freeze_dist:
+                        self.report_result(command_id, success=False, status="REJECTED", message=f"Current price ({current_price:.2f}) is within broker freeze_level ({freeze_dist:.2f}) of existing TP.")
+                        return
+
+            req = {
+                "action": mt5.TRADE_ACTION_SLTP,
+                "position": ticket,
+                "symbol": symbol,
+                "sl": new_sl,
+                "tp": new_tp,
+            }
+            result = mt5.order_send(req)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Position #{ticket} SL/TP modified successfully.")
+                self.report_result(
+                    command_id,
+                    success=True,
+                    status="FILLED",
+                    positionTicket=ticket,
+                    retcode=result.retcode,
+                    message=f"Position #{ticket} SL/TP modified successfully."
+                )
+            else:
+                c_msg = result.comment if result else str(mt5.last_error())
+                c_code = result.retcode if result else -1
+                logger.error(f"Failed to modify position #{ticket}: {c_msg}")
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    retcode=c_code,
+                    message=f"Failed to modify position #{ticket}: {c_msg}"
+                )
+            return
+
+        # Check pending orders
+        orders = mt5.orders_get(ticket=ticket)
+        if orders and len(orders) > 0:
+            o = orders[0]
+            new_sl = sl if sl > 0 else float(o.sl)
+            new_tp = tp if tp > 0 else float(o.tp)
+
+            req = {
+                "action": mt5.TRADE_ACTION_MODIFY,
+                "order": ticket,
+                "price": float(o.price_open),
+                "sl": new_sl,
+                "tp": new_tp,
+                "type_time": o.type_time,
+                "expiration": o.expiration,
+            }
+            result = mt5.order_send(req)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Pending order #{ticket} modified successfully.")
+                self.report_result(
+                    command_id,
+                    success=True,
+                    status="FILLED",
+                    orderTicket=ticket,
+                    retcode=result.retcode,
+                    message=f"Pending order #{ticket} modified successfully."
+                )
+            else:
+                c_msg = result.comment if result else str(mt5.last_error())
+                c_code = result.retcode if result else -1
+                logger.error(f"Failed to modify pending order #{ticket}: {c_msg}")
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    retcode=c_code,
+                    message=f"Failed to modify pending order #{ticket}: {c_msg}"
+                )
+            return
+
+        self.report_result(
+            command_id,
+            success=False,
+            status="REJECTED",
+            message=f"Ticket #{ticket} not found in open positions or pending orders."
+        )
+
+    def execute_close_command(self, cmd: Dict[str, Any], command_id: str):
+        """Closes an active position (full or partial) or cancels a pending order."""
+        ticket = int(cmd.get("ticket") or 0)
+        if ticket <= 0:
+            self.report_result(command_id, success=False, status="REJECTED", message="Order ticket is required for CLOSE.")
+            return
+
+        close_volume = float(cmd.get("volume", 0.0))
+        magic = int(cmd.get("magic", MAGIC_NUMBER))
+        comment = str(cmd.get("comment", "GB-V5 Close Order"))[:31]
+
+        account_info = mt5.account_info()
+        if account_info is None:
+            self.report_result(command_id, success=False, status="REJECTED", message="MT5 account info unavailable.")
+            return
+
+        if not self.validate_account_mode_gate(cmd, command_id, account_info):
+            return
+
+        # Check open positions
+        pos = mt5.positions_get(ticket=ticket)
+        if pos and len(pos) > 0:
+            p = pos[0]
+            symbol = p.symbol
+            tick = mt5.symbol_info_tick(symbol)
+            if tick is None:
+                self.report_result(command_id, success=False, status="REJECTED", message=f"Could not get tick for {symbol}.")
+                return
+
+            # Check symbol allowlist
+            if not any(symbol.upper().startswith(s.upper()) for s in GOLD_SYMBOLS):
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    message=f"Symbol {symbol} is not in the allowed symbol list."
+                )
+                return
+
+            close_type = mt5.ORDER_TYPE_SELL if p.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            price = tick.bid if p.type == mt5.POSITION_TYPE_BUY else tick.ask
+
+            # Check freeze level if available
+            sym_info = mt5.symbol_info(symbol)
+            if sym_info and hasattr(sym_info, "point"):
+                pt = float(getattr(sym_info, "point", 0.01))
+                freeze_lvl = int(getattr(sym_info, "trade_freeze_level", 0))
+                if freeze_lvl > 0 and pt > 0:
+                    freeze_dist = freeze_lvl * pt
+                    if abs(price - float(p.price_open)) <= freeze_dist:
+                        self.report_result(
+                            command_id,
+                            success=False,
+                            status="REJECTED",
+                            message=f"Current price ({price:.2f}) is within broker freeze_level ({freeze_dist:.2f}) of position open price."
+                        )
+                        return
+
+            # Validate requested close volume
+            if close_volume > float(p.volume):
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    message=f"Requested close volume {close_volume} exceeds position volume {float(p.volume)}."
+                )
+                return
+
+            vol = close_volume if close_volume > 0 else float(p.volume)
+
+            # Validate against broker specs for partial or full close
+            sym_info = mt5.symbol_info(symbol)
+            if sym_info and close_volume > 0 and close_volume < float(p.volume):
+                try:
+                    vol_min = float(getattr(sym_info, "volume_min", 0.01))
+                    vol_max = float(getattr(sym_info, "volume_max", 100.0))
+                    vol_step = float(getattr(sym_info, "volume_step", 0.01))
+
+                    if vol < vol_min:
+                        self.report_result(
+                            command_id,
+                            success=False,
+                            status="REJECTED",
+                            message=f"Partial close volume {vol} is below broker minimum {vol_min}."
+                        )
+                        return
+
+                    if vol > vol_max:
+                        self.report_result(
+                            command_id,
+                            success=False,
+                            status="REJECTED",
+                            message=f"Partial close volume {vol} exceeds broker maximum {vol_max}."
+                        )
+                        return
+
+                    if vol_step > 0:
+                        steps = round(vol / vol_step, 6)
+                        if abs(steps - round(steps)) > 1e-4:
+                            self.report_result(
+                                command_id,
+                                success=False,
+                                status="REJECTED",
+                                message=f"Partial close volume {vol} violates broker volume step {vol_step}."
+                            )
+                            return
+                except (TypeError, ValueError, AttributeError):
+                    pass
+
+            req = {
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": ticket,
+                "symbol": symbol,
+                "volume": vol,
+                "type": close_type,
+                "price": price,
+                "deviation": 25,
+                "magic": magic,
+                "comment": comment,
+                "type_time": mt5.ORDER_TIME_GTC,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+            }
+
+            result = mt5.order_send(req)
+            if result is None or result.retcode in [10030, 10031]:
+                for fill in [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN]:
+                    req["type_filling"] = fill
+                    result = mt5.order_send(req)
+                    if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                        break
+
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Position #{ticket} closed successfully at {price}.")
+                self.report_result(
+                    command_id,
+                    success=True,
+                    status="FILLED",
+                    positionTicket=ticket,
+                    executionPrice=float(result.price),
+                    retcode=result.retcode,
+                    message=f"Position #{ticket} closed successfully at {price}."
+                )
+            else:
+                c_msg = result.comment if result else str(mt5.last_error())
+                c_code = result.retcode if result else -1
+                logger.error(f"Failed to close position #{ticket}: {c_msg}")
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    retcode=c_code,
+                    message=f"Failed to close position #{ticket}: {c_msg}"
+                )
+            return
+
+        # Check pending orders
+        orders = mt5.orders_get(ticket=ticket)
+        if orders and len(orders) > 0:
+            req = {
+                "action": mt5.TRADE_ACTION_REMOVE,
+                "order": ticket,
+            }
+            result = mt5.order_send(req)
+            if result and result.retcode == mt5.TRADE_RETCODE_DONE:
+                logger.info(f"Pending order #{ticket} cancelled successfully.")
+                self.report_result(
+                    command_id,
+                    success=True,
+                    status="CANCELLED",
+                    orderCancelled=True,
+                    orderTicket=ticket,
+                    retcode=result.retcode,
+                    message=f"Pending order #{ticket} cancelled successfully."
+                )
+            else:
+                c_msg = result.comment if result else str(mt5.last_error())
+                c_code = result.retcode if result else -1
+                logger.error(f"Failed to cancel pending order #{ticket}: {c_msg}")
+                self.report_result(
+                    command_id,
+                    success=False,
+                    status="REJECTED",
+                    retcode=c_code,
+                    message=f"Failed to cancel pending order #{ticket}: {c_msg}"
+                )
+            return
+
+        self.report_result(
+            command_id,
+            success=False,
+            status="REJECTED",
+            message=f"Ticket #{ticket} not found in open positions or pending orders."
+        )
+
     def execute_command(self, cmd: Dict[str, Any]):
-        """Executes a single command on MT5 demo account with rigorous validation."""
+        """Executes a single command on MT5 account with explicit routing and validation."""
         command_id = cmd.get("commandId")
-        action = str(cmd.get("action", "")).upper()
+        action = str(cmd.get("action", "")).upper().strip()
         volume = float(cmd.get("volume", 0.01))
         sl = float(cmd.get("sl", 0.0))
         tp = float(cmd.get("tp", 0.0))
@@ -247,22 +654,32 @@ class WindowsMT5BridgeClient:
 
         logger.info(f"Processing command [{command_id}]: {action} {volume} {self.resolved_symbol} SL={sl} TP={tp}")
 
-        # 1. Verification of MT5 Account Connection
+        # Explicit command routing gates
+        if action == "MODIFY":
+            self.execute_modify_command(cmd, command_id)
+            return
+
+        if action == "CLOSE":
+            self.execute_close_command(cmd, command_id)
+            return
+
+        if action == "CANCEL":
+            self.execute_close_command(cmd, command_id)
+            return
+
+        if not (any(k in action for k in ["BUY", "SELL"])):
+            logger.error(f"[{command_id}] Execution REJECTED: Unsupported action '{action}'.")
+            self.report_result(command_id, success=False, status="REJECTED", message=f"Unsupported action: {action}.")
+            return
+
+        # 1. Verification of MT5 Account Connection & Strict Fail-Closed Execution Gate
         account_info = mt5.account_info()
         if account_info is None:
             self.report_result(command_id, success=False, status="REJECTED", message="MT5 account info unavailable.")
             return
 
-        expected_mode = str(cmd.get("accountMode", "DEMO")).upper()
-        actual_trade_mode = account_info.trade_mode
-        if expected_mode == "LIVE" or expected_mode == "REAL":
-            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_REAL:
-                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected REAL account for LIVE execution.")
-                return
-        else:
-            if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
-                self.report_result(command_id, success=False, status="REJECTED", message="Account mismatch: Expected DEMO account for DEMO execution.")
-                return
+        if not self.validate_account_mode_gate(cmd, command_id, account_info):
+            return
 
         # 2. Symbol Check & Quote Freshness
         sym = self.resolved_symbol

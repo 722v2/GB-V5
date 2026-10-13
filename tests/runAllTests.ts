@@ -22,6 +22,8 @@ const testFiles = [
   'tests/adminAndRouteSecurity.test.ts',
   'tests/backtestCircularSerializationRegression.test.ts',
   'tests/manualScanTriggerRegression.test.ts',
+  'tests/mt5BridgeCandlePersistence.test.ts',
+  'tests/phase1LiveExecutionSafetyRegression.test.ts',
 ];
 
 console.log('====================================================');

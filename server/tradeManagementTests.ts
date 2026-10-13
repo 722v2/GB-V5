@@ -6,7 +6,7 @@ import {
   DEFAULT_APP_SETTINGS,
 } from '../src/types.js';
 import { tradeManagementEngine } from './tradeManagementEngine.js';
-import { storage } from './storage.js';
+import { PersistentStorage } from './storage.js';
 import { generateMultiStrategyCandidates } from './strategyEngine.js';
 
 interface TestResult {
@@ -105,9 +105,14 @@ function generateMockIndicators(currentPrice: number, trend: 'BULLISH' | 'BEARIS
   };
 }
 
-export async function runTradeManagementTests(): Promise<{ allPassed: boolean; results: TestResult[] }> {
-  const wasTesting = process.env.IS_TESTING === 'true';
-  storage.setTestingMode(true);
+export async function runTradeManagementTests(customStorage?: PersistentStorage): Promise<{ allPassed: boolean; results: TestResult[] }> {
+  if (customStorage && customStorage.isProductionStorage) {
+    throw new Error('HARD SAFETY GUARD TRIGGERED: Refusing to run trade management tests on production storage instance!');
+  }
+  const activeStorage = customStorage || PersistentStorage.createIsolatedTestInstance(100.0);
+  if (activeStorage.isProductionStorage) {
+    throw new Error('HARD SAFETY GUARD TRIGGERED: Refusing to run trade management tests on production storage instance!');
+  }
   try {
     const results: TestResult[] = [];
     tradeManagementEngine.clearNotificationCache();
@@ -790,7 +795,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
       baseSettings
     );
 
-    await tradeManagementEngine.applyManagementDecision(eval1, trade, baseSettings);
+    await tradeManagementEngine.applyManagementDecision(eval1, trade, baseSettings, activeStorage);
 
     // Second evaluation with identical state & price: MUST be flagged duplicate
     const eval2 = await tradeManagementEngine.evaluateSingleTrade(
@@ -984,7 +989,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
       requiresConfirmation: false,
     };
 
-    const sent = await tradeManagementEngine.sendManagementNotification(holdAction, trade);
+    const sent = await tradeManagementEngine.sendManagementNotification(holdAction, trade, undefined, activeStorage.getTelegramNotifier());
     const passed = sent === false; // HOLD must immediately return false and send nothing
 
     results.push({
@@ -1003,7 +1008,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
   try {
     const tradeId = `test-accounting-separation-${Date.now()}`;
     // Ensure the trade is present in the trade ledger before recording outcome
-    storage.saveTrade({
+    activeStorage.saveTrade({
       id: tradeId,
       tradeNumber: 999,
       date: 'Today',
@@ -1041,7 +1046,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
       isoTime: new Date().toISOString(),
     };
 
-    const res = storage.recordTradeOutcome(record);
+    const res = activeStorage.recordTradeOutcome(record);
     const passed =
       res.success &&
       res.trade?.realizedPnl === 17.0 &&
@@ -1112,7 +1117,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
   // TEST 17: Auto Trading remains strictly disabled by default
   // --------------------------------------------------------------------------
   try {
-    const settings = storage.getSettings();
+    const settings = activeStorage.getSettings();
     const action = {
       actionType: 'PARTIAL_CLOSE_TP1' as const,
       tradeId: 'test-disabled-auto',
@@ -1181,7 +1186,7 @@ export async function runTradeManagementTests(): Promise<{ allPassed: boolean; r
 
   const allPassed = results.every((r) => r.passed);
   return { allPassed, results };
-  } finally {
-    storage.setTestingMode(wasTesting);
+  } catch (e: any) {
+    return { allPassed: false, results: [] };
   }
 }

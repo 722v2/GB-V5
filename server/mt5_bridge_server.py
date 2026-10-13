@@ -275,6 +275,63 @@ def get_candles():
     })
 
 
+def verify_execution_authorization(requested_mode: str = None):
+    """
+    Centralized execution authorization policy for MT5 order actions (open, modify, close).
+    Fails closed immediately if authorization or safety criteria are not satisfied.
+    Returns: (authorized: bool, error_response: Response | None, status_code: int, account_info: Any, normalized_mode: str)
+    """
+    if not MT5_AVAILABLE:
+        return False, jsonify({"success": False, "error": "MT5 package not installed."}), 500, None, None
+
+    account_info = mt5.account_info()
+    if account_info is None:
+        if not initialize_mt5():
+            err = mt5.last_error()
+            return False, jsonify({"success": False, "error": f"MT5 Terminal disconnected: {err}"}), 503, None, None
+        account_info = mt5.account_info()
+
+    if account_info is None:
+        return False, jsonify({"success": False, "error": "Unable to retrieve MT5 account info."}), 503, None, None
+
+    # Determine requested mode (defaults to DEMO if unspecified)
+    raw_mode = (requested_mode or "DEMO").strip().upper()
+    if raw_mode == "REAL":
+        raw_mode = "LIVE"
+
+    if raw_mode not in ["DEMO", "LIVE"]:
+        return False, jsonify({
+            "success": False,
+            "error": f"Unsupported or unverified execution mode: '{raw_mode}'. Supported modes: DEMO, LIVE."
+        }), 400, account_info, raw_mode
+
+    actual_trade_mode = getattr(account_info, "trade_mode", None)
+    live_enabled = os.environ.get("MT5_LIVE_EXECUTION_ENABLED", "").strip().lower() == "true"
+
+    if raw_mode == "LIVE":
+        if not live_enabled:
+            logger.error("LIVE/REAL execution BLOCKED by server safety policy: MT5_LIVE_EXECUTION_ENABLED is not true.")
+            return False, jsonify({
+                "success": False,
+                "error": "LIVE/REAL execution disabled by server safety policy (MT5_LIVE_EXECUTION_ENABLED is not true)."
+            }), 403, account_info, raw_mode
+        if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_REAL:
+            logger.error(f"Account mismatch: Expected REAL account for LIVE execution, got trade_mode={actual_trade_mode}.")
+            return False, jsonify({
+                "success": False,
+                "error": f"Account mismatch: Terminal is not a verified REAL account (current trade_mode={actual_trade_mode})."
+            }), 400, account_info, raw_mode
+    elif raw_mode == "DEMO":
+        if actual_trade_mode != mt5.ACCOUNT_TRADE_MODE_DEMO:
+            logger.error(f"Account mismatch: Expected DEMO account for DEMO execution, got trade_mode={actual_trade_mode}.")
+            return False, jsonify({
+                "success": False,
+                "error": f"Account mismatch: Terminal is not a verified DEMO account (current trade_mode={actual_trade_mode}). DEMO operations cannot execute on a REAL account."
+            }), 400, account_info, raw_mode
+
+    return True, None, 200, account_info, raw_mode
+
+
 @app.route("/order", methods=["POST"])
 def execute_order():
     """
@@ -285,15 +342,12 @@ def execute_order():
       - BUY LIMIT
       - SELL LIMIT
     """
-    if not MT5_AVAILABLE:
-        return jsonify({"success": False, "error": "MT5 package not installed."}), 500
-
-    account_info = mt5.account_info()
-    if account_info is None:
-        if not initialize_mt5():
-            return jsonify({"success": False, "error": "MT5 Terminal disconnected."}), 503
-
     data = request.get_json() or {}
+    requested_mode = data.get("mode")
+    auth_ok, err_resp, status_code, account_info, account_mode = verify_execution_authorization(requested_mode)
+    if not auth_ok:
+        return err_resp, status_code
+
     symbol = data.get("symbol", "XAUUSD").replace("/", "")
     action = str(data.get("action", "")).upper()
     lot = float(data.get("lot", 0.01))
@@ -301,7 +355,6 @@ def execute_order():
     sl = float(data.get("sl", 0.0)) if data.get("sl") else 0.0
     tp = float(data.get("tp", 0.0)) if data.get("tp") else 0.0
     comment = str(data.get("comment", "Gold AI Signal"))
-    account_mode = str(data.get("mode", "DEMO")).upper()
 
     # Verify Symbol in MarketWatch
     selected = mt5.symbol_select(symbol, True)
@@ -397,10 +450,12 @@ def execute_order():
 @app.route("/modify", methods=["POST"])
 def modify_order():
     """Modifies Stop Loss and Take Profit for an active position or pending order."""
-    if not MT5_AVAILABLE:
-        return jsonify({"success": False, "error": "MT5 package not installed."}), 500
-
     data = request.get_json() or {}
+    requested_mode = data.get("mode")
+    auth_ok, err_resp, status_code, account_info, account_mode = verify_execution_authorization(requested_mode)
+    if not auth_ok:
+        return err_resp, status_code
+
     ticket = int(data.get("ticket", 0))
     sl = float(data.get("stopLoss", 0.0)) if data.get("stopLoss") is not None else 0.0
     tp = float(data.get("takeProfit", 0.0)) if data.get("takeProfit") is not None else 0.0
@@ -452,10 +507,12 @@ def modify_order():
 @app.route("/close", methods=["POST"])
 def close_order():
     """Closes an active position or cancels a pending order by ticket."""
-    if not MT5_AVAILABLE:
-        return jsonify({"success": False, "error": "MT5 package not installed."}), 500
-
     data = request.get_json() or {}
+    requested_mode = data.get("mode")
+    auth_ok, err_resp, status_code, account_info, account_mode = verify_execution_authorization(requested_mode)
+    if not auth_ok:
+        return err_resp, status_code
+
     ticket = int(data.get("ticket", 0))
     close_lot = float(data.get("lot", 0.0)) if data.get("lot") else 0.0
 

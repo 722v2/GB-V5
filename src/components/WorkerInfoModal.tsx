@@ -148,7 +148,7 @@ export const WorkerInfoModal = ({ isOpen, onClose }: WorkerInfoModalProps) => {
               <span>الحل 1: رابط الـ Webhook الخارجي (موصى به للعمل المستمر):</span>
             </div>
             <p className="text-[11px] text-stone-400">
-              قم بضبط أي خدمة مجانية لفحص الروابط (مثل <strong>cron-job.org</strong> أو <strong>UptimeRobot</strong> أو <strong>Google Cloud Scheduler</strong>) لإرسال طلب GET أو POST إلى الرابط التالي كل 60 ثانية:
+              قم بضبط أي خدمة مجانية لفحص الروابط (مثل <strong>cron-job.org</strong> أو <strong>UptimeRobot</strong> أو <strong>Google Cloud Scheduler</strong>) لإرسال طلب GET أو POST إلى الرابط التالي كل 60 ثانية (مع ترويسة <code>Authorization: Bearer CRON_SECRET</code> أو إضافة <code>?secret=YOUR_CRON_SECRET</code> إذا تم تعيينه في الخادم):
             </p>
             <div className="flex items-center gap-2 bg-stone-900 border border-stone-700/80 rounded-lg p-2 font-mono text-[11px] text-amber-300">
               <span className="truncate flex-1">{cronUrl}</span>
@@ -161,7 +161,7 @@ export const WorkerInfoModal = ({ isOpen, onClose }: WorkerInfoModalProps) => {
               </button>
             </div>
             <span className="text-[10px] text-stone-500 block">
-              هذا الرابط يوقظ الخادم فوراً، ينفذ الفحص، يمنع التكرار، ويحفظ النتيجة في التخزين الدائم.
+              هذا الرابط يوقظ الخادم فوراً، ينفذ الفحص، يمنع التكرار، ويحفظ النتيجة في التخزين الدائم. (يتطلب مصادقة CRON_SECRET عند التفعيل لحماية الخادم).
             </span>
           </div>
 

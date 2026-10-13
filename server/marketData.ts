@@ -630,8 +630,10 @@ export function validateHistoricalBacktestDataset(params: {
   const coverageRatio = Math.min(1.0, Number((actualSpanHours / requestedSpanHours).toFixed(3)));
 
   // Strict coverage check:
-  // Must cover back to target start time (within 15m allowance)
-  const isFullCoverage = actualEarliest5m > 0 && actualEarliest5m <= requestedStartTime + 15 * 60 * 1000;
+  // Must cover back to target start time (within 15m allowance) and forward to requested end time (within 45m allowance or >=95% span)
+  const coversStart = actualEarliest5m > 0 && actualEarliest5m <= requestedStartTime + 15 * 60 * 1000;
+  const coversEnd = actualLatest5m > 0 && (actualLatest5m >= requestedEndTime - 45 * 60 * 1000 || actualSpanHours >= requestedSpanHours * 0.95);
+  const isFullCoverage = Boolean(coversStart && coversEnd && coverageRatio >= 0.90);
   const status = isFullCoverage ? 'VALID' : 'INSUFFICIENT_DATA';
 
   const requestedCandles = Math.max(1, Math.floor(requestedSpanHours * 12));
@@ -718,40 +720,42 @@ export interface HistoricalDatasetResult {
 /**
  * Loads historical data for Backtesting:
  * 1. Checks MT5 Bridge first if available.
- * 2. If MT5 Bridge is connected and returns data, uses MT5 Bridge.
- * 3. Otherwise, falls back to Biquote with strict validation.
+ * 2. If MT5 Bridge has full coverage for requested period, uses MT5 Bridge.
+ * 3. If MT5 Bridge has insufficient coverage or is unavailable, queries Biquote.
+ * 4. Selects the provider satisfying full coverage, or the one with superior coverage if both partial.
+ * 5. Fails closed with accurate validation report if data is incomplete.
  */
-export async function fetchHistoricalBacktestDataset(params: {
-  symbol?: string;
-  timeRange?: string;
-  requestedStartTime: number;
-  requestedEndTime?: number;
-}): Promise<HistoricalDatasetResult> {
+export async function fetchHistoricalBacktestDataset(
+  params: {
+    symbol?: string;
+    timeRange?: string;
+    requestedStartTime: number;
+    requestedEndTime?: number;
+  },
+  bridgeService = mt5Bridge
+): Promise<HistoricalDatasetResult> {
   const symbol = (params.symbol || 'XAUUSD').replace('/', '').toUpperCase();
   const timeRange = params.timeRange || '7D';
   const requestedStartTime = params.requestedStartTime;
   const requestedEndTime = params.requestedEndTime || Date.now();
 
-  const spanHours = Math.max(1, (requestedEndTime - requestedStartTime) / (3600 * 1000));
-  const count5m = Math.min(50000, Math.ceil(spanHours * 12) + 300);
-  const count15m = Math.min(20000, Math.ceil(spanHours * 4) + 150);
-  const count1h = Math.min(10000, Math.ceil(spanHours * 1) + 100);
+  let mt5Candidate: HistoricalDatasetResult | null = null;
 
   // 1. Try MT5 Bridge historical candles if available
-  if (mt5Bridge.hasHistoricalCandles('M5')) {
+  if (bridgeService.hasHistoricalCandles('M5')) {
     try {
-      const mt51m = mt5Bridge.getHistoricalCandles('M1') || [];
-      const mt55m = mt5Bridge.getHistoricalCandles('M5') || [];
-      const mt515m = mt5Bridge.getHistoricalCandles('M15') || [];
-      const mt51h = mt5Bridge.getHistoricalCandles('H1') || [];
+      const mt51m = bridgeService.getHistoricalCandles('M1') || [];
+      const mt55m = bridgeService.getHistoricalCandles('M5') || [];
+      const mt515m = bridgeService.getHistoricalCandles('M15') || [];
+      const mt51h = bridgeService.getHistoricalCandles('H1') || [];
 
-      if (mt55m.length >= 30) {
-        // Filter candles strictly up to requestedEndTime so no future data is included
-        const filtered1m = mt51m.filter((c) => c.timestamp <= requestedEndTime);
-        const filtered5m = mt55m.filter((c) => c.timestamp <= requestedEndTime);
-        const filtered15m = mt515m.filter((c) => c.timestamp <= requestedEndTime);
-        const filtered1h = mt51h.filter((c) => c.timestamp <= requestedEndTime);
+      // Filter candles strictly up to requestedEndTime so no future data is included
+      const filtered1m = mt51m.filter((c) => c.timestamp <= requestedEndTime);
+      const filtered5m = mt55m.filter((c) => c.timestamp <= requestedEndTime);
+      const filtered15m = mt515m.filter((c) => c.timestamp <= requestedEndTime);
+      const filtered1h = mt51h.filter((c) => c.timestamp <= requestedEndTime);
 
+      if (filtered5m.length >= 30) {
         const validation = validateHistoricalBacktestDataset({
           provider: 'MT5_BRIDGE',
           symbol,
@@ -764,8 +768,7 @@ export async function fetchHistoricalBacktestDataset(params: {
           duplicatesRemoved: { '5m': 0, '15m': 0, '1h': 0 },
         });
 
-        console.log(`[HistoricalDataLoader] MT5 Bridge loaded successfully: ${filtered1m.length} 1M and ${filtered5m.length} 5M candles. Provider: MT5_BRIDGE`);
-        return {
+        mt5Candidate = {
           provider: 'MT5_BRIDGE',
           candles1m: filtered1m,
           candles5m: filtered5m,
@@ -774,47 +777,121 @@ export async function fetchHistoricalBacktestDataset(params: {
           duplicatesRemoved: { '1m': 0, '5m': 0, '15m': 0, '1h': 0 },
           validation,
         };
+
+        // If MT5 Bridge has full coverage, return it immediately
+        if (validation.isFullCoverage) {
+          console.log(`[HistoricalDataLoader] MT5 Bridge loaded successfully with full coverage: ${filtered1m.length} 1M and ${filtered5m.length} 5M candles. Provider: MT5_BRIDGE`);
+          return mt5Candidate;
+        }
+
+        console.warn(
+          `[HistoricalDataLoader] MT5 Bridge has insufficient coverage (${(validation.coverageRatio * 100).toFixed(1)}%, status: ${validation.status}) for ${timeRange}. Evaluating fallback to Biquote...`
+        );
+      } else {
+        console.warn(
+          `[HistoricalDataLoader] MT5 Bridge has only ${filtered5m.length} valid 5M candles up to requested end time (minimum 30 required). Falling back to Biquote...`
+        );
       }
     } catch (err: any) {
-      console.warn(`[HistoricalDataLoader] MT5 Bridge cache fetch error: ${err.message}, falling back.`);
+      console.warn(`[HistoricalDataLoader] MT5 Bridge cache fetch error: ${err.message}, falling back to Biquote.`);
     }
   }
 
-  // 2. Fallback to Biquote
-  console.log(`[HistoricalDataLoader] Fetching historical candles from Biquote (fallback)...`);
-  const [res1h, res15m, res5m] = await Promise.all([
-    fetchHistoricalCandlesWithPagination(symbol, '1h', requestedStartTime, requestedEndTime, 15),
-    fetchHistoricalCandlesWithPagination(symbol, '15m', requestedStartTime, requestedEndTime, 20),
-    fetchHistoricalCandlesWithPagination(symbol, '5m', requestedStartTime, requestedEndTime, 25),
-  ]);
+  // 2. Fetch from Biquote (fallback or primary)
+  let biquoteCandidate: HistoricalDatasetResult | null = null;
+  try {
+    console.log(`[HistoricalDataLoader] Fetching historical candles from Biquote...`);
+    const [res1h, res15m, res5m] = await Promise.all([
+      fetchHistoricalCandlesWithPagination(symbol, '1h', requestedStartTime, requestedEndTime, 15),
+      fetchHistoricalCandlesWithPagination(symbol, '15m', requestedStartTime, requestedEndTime, 20),
+      fetchHistoricalCandlesWithPagination(symbol, '5m', requestedStartTime, requestedEndTime, 25),
+    ]);
 
-  const validation = validateHistoricalBacktestDataset({
+    const validation = validateHistoricalBacktestDataset({
+      provider: 'BIQUOTE',
+      symbol,
+      timeRange,
+      requestedStartTime,
+      requestedEndTime,
+      candles5m: res5m.candles,
+      candles15m: res15m.candles,
+      candles1h: res1h.candles,
+      duplicatesRemoved: {
+        '5m': res5m.duplicatesRemoved,
+        '15m': res15m.duplicatesRemoved,
+        '1h': res1h.duplicatesRemoved,
+      },
+    });
+
+    biquoteCandidate = {
+      provider: 'BIQUOTE',
+      candles5m: res5m.candles,
+      candles15m: res15m.candles,
+      candles1h: res1h.candles,
+      duplicatesRemoved: {
+        '5m': res5m.duplicatesRemoved,
+        '15m': res15m.duplicatesRemoved,
+        '1h': res1h.duplicatesRemoved,
+      },
+      validation,
+    };
+
+    // If Biquote satisfies full coverage, use Biquote
+    if (validation.isFullCoverage) {
+      console.log(`[HistoricalDataLoader] Biquote loaded successfully with full coverage: ${res5m.candles.length} 5M candles. Provider: BIQUOTE`);
+      return biquoteCandidate;
+    }
+  } catch (err: any) {
+    console.warn(`[HistoricalDataLoader] Biquote historical fetch error: ${err.message}`);
+  }
+
+  // 3. Selection when neither provider has full coverage:
+  // Prefer the provider with higher coverage, while accurately reporting INSUFFICIENT_DATA
+  if (mt5Candidate && biquoteCandidate) {
+    const mt5Coverage = mt5Candidate.validation.coverageRatio || 0;
+    const biquoteCoverage = biquoteCandidate.validation.coverageRatio || 0;
+
+    if (biquoteCoverage > mt5Coverage) {
+      console.warn(
+        `[HistoricalDataLoader] Neither provider has full coverage. Choosing Biquote with higher coverage (${(biquoteCoverage * 100).toFixed(1)}% vs MT5 ${(mt5Coverage * 100).toFixed(1)}%).`
+      );
+      return biquoteCandidate;
+    } else {
+      console.warn(
+        `[HistoricalDataLoader] Neither provider has full coverage. Choosing MT5 Bridge with higher/equal coverage (${(mt5Coverage * 100).toFixed(1)}% vs Biquote ${(biquoteCoverage * 100).toFixed(1)}%).`
+      );
+      return mt5Candidate;
+    }
+  }
+
+  if (biquoteCandidate) {
+    return biquoteCandidate;
+  }
+
+  if (mt5Candidate) {
+    return mt5Candidate;
+  }
+
+  // If both failed or returned empty data, return fail-closed validation dataset
+  const emptyValidation = validateHistoricalBacktestDataset({
     provider: 'BIQUOTE',
     symbol,
     timeRange,
     requestedStartTime,
     requestedEndTime,
-    candles5m: res5m.candles,
-    candles15m: res15m.candles,
-    candles1h: res1h.candles,
-    duplicatesRemoved: {
-      '5m': res5m.duplicatesRemoved,
-      '15m': res15m.duplicatesRemoved,
-      '1h': res1h.duplicatesRemoved,
-    },
+    candles5m: [],
+    candles15m: [],
+    candles1h: [],
+    duplicatesRemoved: { '5m': 0, '15m': 0, '1h': 0 },
   });
 
   return {
     provider: 'BIQUOTE',
-    candles5m: res5m.candles,
-    candles15m: res15m.candles,
-    candles1h: res1h.candles,
-    duplicatesRemoved: {
-      '5m': res5m.duplicatesRemoved,
-      '15m': res15m.duplicatesRemoved,
-      '1h': res1h.duplicatesRemoved,
-    },
-    validation,
+    candles5m: [],
+    candles15m: [],
+    candles1h: [],
+    duplicatesRemoved: { '5m': 0, '15m': 0, '1h': 0 },
+    validation: emptyValidation,
   };
 }
 

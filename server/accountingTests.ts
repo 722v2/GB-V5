@@ -1,4 +1,4 @@
-import { storage, TradeOutcomeRecord } from './storage.js';
+import { PersistentStorage, TradeOutcomeRecord } from './storage.js';
 import { sanitizeFirestoreData } from './storage.js';
 import { TradeLedgerItem, TradeSignal, TradeOpportunity } from '../src/types.js';
 
@@ -9,7 +9,7 @@ interface TestResult {
   details: string;
 }
 
-function createTestOpenTrade(id: string, overrides: Partial<TradeLedgerItem> = {}): TradeLedgerItem {
+function createTestOpenTrade(id: string, overrides: Partial<TradeLedgerItem> = {}, targetStorage: PersistentStorage): TradeLedgerItem {
   const trade: TradeLedgerItem = {
     id,
     tradeNumber: Date.now(),
@@ -29,33 +29,34 @@ function createTestOpenTrade(id: string, overrides: Partial<TradeLedgerItem> = {
     result: 'OPEN',
     isActive: true,
     pl: 0,
-    balanceAfterTrade: storage.getCurrentBalance(),
+    balanceAfterTrade: targetStorage.getCurrentBalance(),
     ...overrides,
   };
-  storage.saveTrade(trade);
+  targetStorage.saveTrade(trade);
   return trade;
 }
 
-export function runAccountingTests(): { allPassed: boolean; results: TestResult[] } {
-  const wasTesting = process.env.IS_TESTING === 'true';
-  const savedTrades = [...storage.getTrades()];
-  const savedOutcomes = [...storage.getTradeOutcomes(500)];
-  const savedCurrentBal = storage.getCurrentBalance();
-  const savedStartingBal = storage.getStartingBalance();
-  storage.setTestingMode(true);
+export function runAccountingTests(customStorage?: PersistentStorage): { allPassed: boolean; results: TestResult[] } {
+  if (customStorage && customStorage.isProductionStorage) {
+    throw new Error('HARD SAFETY GUARD TRIGGERED: Refusing to run accounting tests on production storage instance!');
+  }
+  const activeStorage = customStorage || PersistentStorage.createIsolatedTestInstance(100.0);
+  if (activeStorage.isProductionStorage) {
+    throw new Error('HARD SAFETY GUARD TRIGGERED: Refusing to run accounting tests on production storage instance!');
+  }
   try {
     const results: TestResult[] = [];
 
     const initialStartingBalance = 100.0;
-    storage.setStartingBalance(initialStartingBalance);
+    activeStorage.setStartingBalance(initialStartingBalance);
 
     // --------------------------------------------------------------------------
     // TEST 1: WIN outcome with explicit realized P&L on existing trade updates balance
     // --------------------------------------------------------------------------
     try {
-      const balBefore = storage.getCurrentBalance();
+      const balBefore = activeStorage.getCurrentBalance();
       const tradeId = 'test-trade-1-win-explicit';
-      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry: 4296.49, sl: 4300.49, tp1: 4278.29 });
+      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry: 4296.49, sl: 4300.49, tp1: 4278.29 }, activeStorage);
 
       const record: TradeOutcomeRecord = {
         signalId: tradeId,
@@ -74,8 +75,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const res = storage.recordTradeOutcome(record);
-      const balAfter = storage.getCurrentBalance();
+      const res = activeStorage.recordTradeOutcome(record);
+      const balAfter = activeStorage.getCurrentBalance();
       const pnlMatches = res.trade?.realizedPnl === 17.0;
       const balanceDiff = Number((balAfter - balBefore).toFixed(2));
       const passed = res.success && pnlMatches && balanceDiff === 17.0;
@@ -99,7 +100,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 2: WIN outcome with composite RR calculates price distance, not fallback 1.5R
     // --------------------------------------------------------------------------
     try {
-      const balBefore = storage.getCurrentBalance();
+      const balBefore = activeStorage.getCurrentBalance();
       const tradeId = 'test-trade-2-composite-rr';
       createTestOpenTrade(tradeId, {
         direction: 'SELL NOW',
@@ -108,7 +109,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         tp1: 4278.29,
         tp2: 4276.25,
         lotSize: 0.01,
-      });
+      }, activeStorage);
 
       const mockSignal = {
         id: tradeId,
@@ -143,8 +144,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const res = storage.recordTradeOutcome(record, mockSignal);
-      const balAfter = storage.getCurrentBalance();
+      const res = activeStorage.recordTradeOutcome(record, mockSignal);
+      const balAfter = activeStorage.getCurrentBalance();
       const pnl = res.trade?.realizedPnl ?? 0;
       const notBuggy15R = pnl > 10.0 && pnl !== 6.0 && pnl !== 6.07;
       const balanceDiff = Number((balAfter - balBefore).toFixed(2));
@@ -169,9 +170,9 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 3: LOSS outcome records exact negative P&L and reduces balance
     // --------------------------------------------------------------------------
     try {
-      const balBefore = storage.getCurrentBalance();
+      const balBefore = activeStorage.getCurrentBalance();
       const tradeId = 'test-trade-3-loss-exact';
-      createTestOpenTrade(tradeId, { direction: 'BUY NOW', entry: 4300.0, sl: 4296.0, tp1: 4310.0 });
+      createTestOpenTrade(tradeId, { direction: 'BUY NOW', entry: 4300.0, sl: 4296.0, tp1: 4310.0 }, activeStorage);
 
       const record: TradeOutcomeRecord = {
         signalId: tradeId,
@@ -190,8 +191,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const res = storage.recordTradeOutcome(record);
-      const balAfter = storage.getCurrentBalance();
+      const res = activeStorage.recordTradeOutcome(record);
+      const balAfter = activeStorage.getCurrentBalance();
       const balanceDiff = Number((balAfter - balBefore).toFixed(2));
       const passed = res.success && res.trade?.realizedPnl === -4.0 && balanceDiff === -4.0;
 
@@ -215,7 +216,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // --------------------------------------------------------------------------
     try {
       const tradeIdWin = 'test-trade-4-win-sign-guard';
-      createTestOpenTrade(tradeIdWin, { direction: 'BUY NOW' });
+      createTestOpenTrade(tradeIdWin, { direction: 'BUY NOW' }, activeStorage);
       const recordWinWithNegative: TradeOutcomeRecord = {
         signalId: tradeIdWin,
         tradeId: tradeIdWin,
@@ -232,11 +233,11 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const resWin = storage.recordTradeOutcome(recordWinWithNegative);
+      const resWin = activeStorage.recordTradeOutcome(recordWinWithNegative);
       const winFixed = (resWin.trade?.realizedPnl ?? 0) > 0;
 
       const tradeIdLoss = 'test-trade-4-loss-sign-guard';
-      createTestOpenTrade(tradeIdLoss, { direction: 'BUY NOW' });
+      createTestOpenTrade(tradeIdLoss, { direction: 'BUY NOW' }, activeStorage);
       const recordLossWithPositive: TradeOutcomeRecord = {
         signalId: tradeIdLoss,
         tradeId: tradeIdLoss,
@@ -253,7 +254,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const resLoss = storage.recordTradeOutcome(recordLossWithPositive);
+      const resLoss = activeStorage.recordTradeOutcome(recordLossWithPositive);
       const lossFixed = (resLoss.trade?.realizedPnl ?? 0) < 0;
 
       const passed = winFixed && lossFixed;
@@ -276,9 +277,9 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 5: Idempotency / duplicate callback protection (prevents double counting)
     // --------------------------------------------------------------------------
     try {
-      const balBefore = storage.getCurrentBalance();
+      const balBefore = activeStorage.getCurrentBalance();
       const tradeId = 'test-trade-5-duplicate-protection';
-      createTestOpenTrade(tradeId, { direction: 'SELL NOW' });
+      createTestOpenTrade(tradeId, { direction: 'SELL NOW' }, activeStorage);
 
       const record: TradeOutcomeRecord = {
         signalId: tradeId,
@@ -297,12 +298,12 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
       };
 
       // First submission
-      const res1 = storage.recordTradeOutcome(record);
-      const balAfterFirst = storage.getCurrentBalance();
+      const res1 = activeStorage.recordTradeOutcome(record);
+      const balAfterFirst = activeStorage.getCurrentBalance();
 
       // Second duplicate submission
-      const res2 = storage.recordTradeOutcome(record);
-      const balAfterSecond = storage.getCurrentBalance();
+      const res2 = activeStorage.recordTradeOutcome(record);
+      const balAfterSecond = activeStorage.getCurrentBalance();
 
       const firstPassed = res1.success && balAfterFirst === balBefore + 10.0;
       const secondBlocked = res2.isDuplicate === true && balAfterSecond === balAfterFirst;
@@ -333,7 +334,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
       const expectedPnl = Number((Math.abs(entry - tp1) * 100 * lotSize).toFixed(2)); // 18.20 * 100 * 0.01 = 18.20
 
       const tradeId = 'test-trade-6-gold-formula';
-      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry, sl: 4300.49, tp1, lotSize });
+      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry, sl: 4300.49, tp1, lotSize }, activeStorage);
 
       const record: TradeOutcomeRecord = {
         signalId: tradeId,
@@ -351,7 +352,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       };
 
-      const res = storage.recordTradeOutcome(record);
+      const res = activeStorage.recordTradeOutcome(record);
       const pnl = res.trade?.realizedPnl;
       const passed = res.success && pnl === expectedPnl && pnl === 18.2;
 
@@ -374,13 +375,13 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 7: Future MT5 reconciliation (reconcileMt5Trade) with brokerDealId
     // --------------------------------------------------------------------------
     try {
-      const balBefore = storage.getCurrentBalance();
+      const balBefore = activeStorage.getCurrentBalance();
       const tradeId = 'test-trade-7-mt5-reconciliation';
       const brokerDealId = 'MT5_DEAL_987654321';
       const brokerOrderId = 'MT5_ORDER_123456';
-      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry: 4290.0, sl: 4300.0, tp1: 4275.0, lotSize: 0.02 });
+      createTestOpenTrade(tradeId, { direction: 'SELL NOW', entry: 4290.0, sl: 4300.0, tp1: 4275.0, lotSize: 0.02 }, activeStorage);
 
-      const res = storage.reconcileMt5Trade({
+      const res = activeStorage.reconcileMt5Trade({
         signalOrTradeId: tradeId,
         brokerDealId,
         brokerOrderId,
@@ -393,7 +394,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         direction: 'SELL NOW',
       });
 
-      const balAfter = storage.getCurrentBalance();
+      const balAfter = activeStorage.getCurrentBalance();
       const balanceDiff = Number((balAfter - balBefore).toFixed(2));
       const passed =
         res.success &&
@@ -423,8 +424,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // --------------------------------------------------------------------------
     try {
       const tradeManual = 'test-trade-8-src-manual';
-      createTestOpenTrade(tradeManual);
-      const resManual = storage.recordTradeOutcome({
+      createTestOpenTrade(tradeManual, {}, activeStorage);
+      const resManual = activeStorage.recordTradeOutcome({
         signalId: tradeManual,
         tradeId: tradeManual,
         direction: 'BUY NOW',
@@ -441,8 +442,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
       });
 
       const tradeSystem = 'test-trade-8-src-system';
-      createTestOpenTrade(tradeSystem);
-      const resSystem = storage.recordTradeOutcome({
+      createTestOpenTrade(tradeSystem, {}, activeStorage);
+      const resSystem = activeStorage.recordTradeOutcome({
         signalId: tradeSystem,
         tradeId: tradeSystem,
         direction: 'BUY NOW',
@@ -515,10 +516,10 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // --------------------------------------------------------------------------
     try {
       const nonExistentTradeId = 'phantom-trade-' + Date.now();
-      const tradesCountBefore = storage.getTrades().length;
-      const balBefore = storage.getCurrentBalance();
+      const tradesCountBefore = activeStorage.getTrades().length;
+      const balBefore = activeStorage.getCurrentBalance();
 
-      const res = storage.recordTradeOutcome({
+      const res = activeStorage.recordTradeOutcome({
         signalId: nonExistentTradeId,
         tradeId: nonExistentTradeId,
         direction: 'BUY NOW',
@@ -534,8 +535,8 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         isoTime: new Date().toISOString(),
       });
 
-      const tradesCountAfter = storage.getTrades().length;
-      const balAfter = storage.getCurrentBalance();
+      const tradesCountAfter = activeStorage.getTrades().length;
+      const balAfter = activeStorage.getCurrentBalance();
 
       const passed =
         res.success === false &&
@@ -590,16 +591,16 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
         recommendedLotSize: 0.01,
         lifecycleState: 'READY',
       };
-      storage.saveSignal(mockSignal);
+      activeStorage.saveSignal(mockSignal);
 
-      const tradesBefore = storage.getTrades().length;
-      const balBefore = storage.getCurrentBalance();
+      const tradesBefore = activeStorage.getTrades().length;
+      const balBefore = activeStorage.getCurrentBalance();
 
-      const res = storage.markSignalOrOpportunityNotEntered(signalId);
-      const tradesAfter = storage.getTrades().length;
-      const balAfter = storage.getCurrentBalance();
+      const res = activeStorage.markSignalOrOpportunityNotEntered(signalId);
+      const tradesAfter = activeStorage.getTrades().length;
+      const balAfter = activeStorage.getCurrentBalance();
 
-      const updatedSig = storage.getSignal(signalId);
+      const updatedSig = activeStorage.getSignal(signalId);
       const passed =
         res.success === true &&
         updatedSig?.lifecycleState === 'NOT_ENTERED' &&
@@ -626,9 +627,9 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // --------------------------------------------------------------------------
     try {
       const sigId = 'test-sig-not-entered-dup-' + Date.now();
-      storage.markSignalOrOpportunityNotEntered(sigId);
+      activeStorage.markSignalOrOpportunityNotEntered(sigId);
 
-      const outcome = storage.getTradeOutcome(sigId);
+      const outcome = activeStorage.getTradeOutcome(sigId);
       const isNotEntered = (outcome?.outcome as any) === 'NOT_ENTERED';
       const zeroPnl = outcome?.realizedPnl === 0 && outcome?.pl === 0;
       const passed = isNotEntered && zeroPnl;
@@ -652,12 +653,12 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 13: clearAllTrades clears memory and resets balance without resurrecting trades
     // --------------------------------------------------------------------------
     try {
-      createTestOpenTrade('clear-trade-1');
-      createTestOpenTrade('clear-trade-2');
+      createTestOpenTrade('clear-trade-1', {}, activeStorage);
+      createTestOpenTrade('clear-trade-2', {}, activeStorage);
 
-      const tradesBeforeClear = storage.getTrades().length;
-      storage.clearAllTrades();
-      const tradesAfterClear = storage.getTrades().length;
+      const tradesBeforeClear = activeStorage.getTrades().length;
+      activeStorage.clearAllTrades();
+      const tradesAfterClear = activeStorage.getTrades().length;
 
       const passed = tradesBeforeClear > 0 && tradesAfterClear === 0;
 
@@ -680,12 +681,12 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
     // TEST 14: NOT_ENTERED signals do NOT count towards daily trade stats or ledger
     // --------------------------------------------------------------------------
     try {
-      const initialStats = storage.getTodayStats();
+      const initialStats = activeStorage.getTodayStats();
       const sigId = 'test-not-entered-daily-' + Date.now();
       
-      const res = storage.markSignalOrOpportunityNotEntered(sigId);
-      const afterStats = storage.getTodayStats();
-      const outcome = storage.getTradeOutcome(sigId);
+      const res = activeStorage.markSignalOrOpportunityNotEntered(sigId);
+      const afterStats = activeStorage.getTodayStats();
+      const outcome = activeStorage.getTradeOutcome(sigId);
 
       const passed =
         res.success === true &&
@@ -710,8 +711,7 @@ export function runAccountingTests(): { allPassed: boolean; results: TestResult[
 
     const allPassed = results.every((r) => r.passed);
     return { allPassed, results };
-  } finally {
-    storage.restoreTestSnapshot(savedTrades, savedOutcomes, savedCurrentBal, savedStartingBal);
-    storage.setTestingMode(wasTesting);
+  } catch (e: any) {
+    return { allPassed: false, results: [] };
   }
 }

@@ -1,5 +1,7 @@
-import { Candle } from '../src/types.js';
-import { storage } from './storage.js';
+import fs from 'fs';
+import path from 'path';
+import { Candle, AccountExecutionMode, TradeLedgerItem } from '../src/types.js';
+import { storage, PersistentStorage } from './storage.js';
 import { BrokerContractSpecs, DEFAULT_BROKER_SPECS, evaluateTradeRisk } from './riskManager.js';
 import { telegramService } from './telegram.js';
 
@@ -58,7 +60,9 @@ export interface MT5AccountStatus {
   brokerSpecsValid?: boolean;
 }
 
-export type MT5CommandAction = 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT' | 'CLOSE' | 'MODIFY';
+export type { AccountExecutionMode };
+
+export type MT5CommandAction = 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT' | 'CLOSE' | 'MODIFY' | 'CANCEL';
 
 export type MT5CommandStatus = 
   | 'PENDING'
@@ -66,7 +70,8 @@ export type MT5CommandStatus =
   | 'FILLED'
   | 'REJECTED'
   | 'FAILED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'UNRESOLVED';
 
 export interface MT5ExecutionCommand {
   commandId: string;
@@ -143,9 +148,56 @@ export interface MT5BridgeHeartbeatPayload {
   timestamp?: number;
 }
 
-class MT5BridgeService {
-  // Safety Boundary: Live trading is permanently disabled in this integration
-  public readonly IS_LIVE_ALLOWED: boolean = false;
+export class MT5BridgeService {
+  // Centralized Live Execution Authorization Policy
+  // LIVE/REAL trading is fully supported when explicitly configured and authorized, but fails closed by default.
+  public isLiveExecutionConfigured(): boolean {
+    return String(process.env.MT5_LIVE_EXECUTION_ENABLED || '').trim().toLowerCase() === 'true';
+  }
+
+  public evaluateLiveExecutionPolicy(): { allowed: boolean; reason?: string } {
+    // 1. Central Environment Configuration Gate
+    if (!this.isLiveExecutionConfigured()) {
+      return {
+        allowed: false,
+        reason: 'التداول الحقيقي (LIVE/REAL) غير مفعّل في إعدادات الخادم (MT5_LIVE_EXECUTION_ENABLED يجب أن تكون true).',
+      };
+    }
+
+    // 2. Kill switch gate
+    if (this.killSwitchActivated) {
+      return {
+        allowed: false,
+        reason: 'زر الطوارئ (Kill Switch) مفعّل. يجب إعادة الضبط أولاً.',
+      };
+    }
+
+    // 3. Connectivity gate
+    if (!this.lastStatus.connected || !this.lastStatus.terminalConnected) {
+      return {
+        allowed: false,
+        reason: 'جسر MT5 غير متصل بمنصة التداول. يرجى تشغيل Windows Bridge والتحقق من اتصال المنصة.',
+      };
+    }
+
+    // 4. Strict Verified REAL Account Gate (Numeric tradeMode === 2 AND accountMode === 'REAL')
+    if (!this.isVerifiedRealAccount()) {
+      return {
+        allowed: false,
+        reason: 'الحساب المتصل ليس حساباً حقيقياً (REAL Account) موثقاً من MT5 برقم نمط التداول 2.',
+      };
+    }
+
+    // 5. Consecutive failures gate
+    if (this.consecutiveFailures >= this.safetyConfig.maxConsecutiveFailures) {
+      return {
+        allowed: false,
+        reason: `تم حظر التداول لتجاوز حد أخطاء التنفيذ المتتالية (${this.consecutiveFailures}).`,
+      };
+    }
+
+    return { allowed: true };
+  }
 
   // Active execution mode selection: ANALYSIS | DEMO | LIVE (defaults to ANALYSIS or DEMO, stored server-side)
   private activeExecutionMode: AccountExecutionMode = 'DEMO';
@@ -179,6 +231,7 @@ class MT5BridgeService {
   // Explicit safety flags: ALWAYS disabled on startup, deploy, restart or reconnect
   private demoAutoTradingEnabled: boolean = false;
   private killSwitchActivated: boolean = false;
+  private killSwitchReason: string = '';
   private consecutiveFailures: number = 0;
 
   // Configurable Safety Limits
@@ -193,8 +246,11 @@ class MT5BridgeService {
     symbolAllowlist: ['XAUUSD', 'GOLD', 'XAUUSDm', 'XAUUSD.m', 'XAUUSD.a', 'XAUUSD.raw', 'XAUUSDb'],
   };
 
-  // Commands Queue (Outbound Windows Agent polling)
   private commands: Map<string, MT5ExecutionCommand> = new Map();
+  private readonly isIsolatedTest: boolean;
+  private readonly enableCommandPersistence: boolean;
+  private readonly commandsFilePath: string;
+  private readonly dispatchTimeoutMs: number = 60 * 1000; // 60 seconds dispatch timeout
 
   // Positions tracking
   private openPositions: Map<number, MT5PositionInfo> = new Map();
@@ -202,9 +258,127 @@ class MT5BridgeService {
   // Historical Candles Cache (keyed by timeframe M1, M5, M15, H1)
   private candleCache: Map<string, Candle[]> = new Map();
   private lastCandleSyncTime: number = 0;
+  private readonly candleCacheFilePath: string = path.join(process.cwd(), 'server', 'data', 'mt5_candles.json');
 
-  constructor() {
+  constructor(options?: { isIsolatedTest?: boolean; commandsFilePath?: string; candleCacheFilePath?: string }) {
+    this.isIsolatedTest = Boolean(options?.isIsolatedTest);
+    this.commandsFilePath = options?.commandsFilePath || path.join(process.cwd(), 'data', 'mt5_commands.json');
+    this.enableCommandPersistence = options?.commandsFilePath ? true : !this.isIsolatedTest;
+    if (options?.candleCacheFilePath) {
+      this.candleCacheFilePath = options.candleCacheFilePath;
+    }
     this.loadSafetyConfigFromEnv();
+    if (!this.isIsolatedTest) {
+      this.loadCandleCacheFromDisk();
+    }
+    this.loadCommandsFromDisk();
+  }
+
+  private loadCommandsFromDisk(): void {
+    if (!this.enableCommandPersistence) return;
+    try {
+      if (fs.existsSync(this.commandsFilePath)) {
+        const raw = fs.readFileSync(this.commandsFilePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && typeof data === 'object') {
+          if (Array.isArray(data.commands)) {
+            const now = Date.now();
+            for (const c of data.commands) {
+              if (c && c.commandId) {
+                // Restart Recovery: In-flight DISPATCHED command transitions to UNRESOLVED
+                // Safe unknown-outcome state; broker might have executed it, so do NOT assume failure and do NOT auto-retry!
+                if (c.status === 'DISPATCHED') {
+                  c.status = 'UNRESOLVED';
+                  c.failureReason = 'Server restarted while command was in flight with broker';
+                  c.updatedAt = now;
+                } else if (c.status === 'PENDING' && (now - c.createdAt > this.safetyConfig.maxQuoteAgeSeconds * 1000)) {
+                  c.status = 'CANCELLED';
+                  c.failureReason = 'Command quote expired during server restart';
+                  c.updatedAt = now;
+                }
+                this.commands.set(c.commandId, c);
+              }
+            }
+          }
+          if (Array.isArray(data.processedDealTickets)) {
+            for (const t of data.processedDealTickets) {
+              if (typeof t === 'number') this.processedDealTickets.add(t);
+            }
+          }
+          console.log(`[MT5Bridge] Loaded ${this.commands.size} persisted commands and ${this.processedDealTickets.size} deals from disk.`);
+        }
+      }
+    } catch (err: any) {
+      console.error('[MT5Bridge] Error loading persisted commands:', err.message);
+    }
+  }
+
+  public persistCommandsToDisk(): void {
+    if (!this.enableCommandPersistence) return;
+    try {
+      const dir = path.dirname(this.commandsFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const payload = {
+        updatedAt: Date.now(),
+        commands: Array.from(this.commands.values()).slice(-200),
+        processedDealTickets: Array.from(this.processedDealTickets).slice(-500),
+      };
+      fs.writeFileSync(this.commandsFilePath, JSON.stringify(payload, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.error('[MT5Bridge] Error persisting commands to disk:', err.message);
+    }
+  }
+
+  public checkCommandTimeouts(now: number = Date.now()): number {
+    let timedOutCount = 0;
+    for (const cmd of this.commands.values()) {
+      if (cmd.status === 'DISPATCHED' && (now - cmd.updatedAt > this.dispatchTimeoutMs)) {
+        cmd.status = 'UNRESOLVED';
+        cmd.failureReason = `Command timed out after ${Math.round(this.dispatchTimeoutMs / 1000)}s without broker confirmation; outcome uncertain.`;
+        cmd.updatedAt = now;
+        timedOutCount++;
+        console.warn(`[MT5Bridge] Command ${cmd.commandId} transitioned to UNRESOLVED due to dispatch timeout.`);
+      }
+    }
+    if (timedOutCount > 0) {
+      this.persistCommandsToDisk();
+    }
+    return timedOutCount;
+  }
+
+  private loadCandleCacheFromDisk() {
+    try {
+      if (fs.existsSync(this.candleCacheFilePath)) {
+        const raw = fs.readFileSync(this.candleCacheFilePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && typeof data === 'object') {
+          for (const [tf, candles] of Object.entries(data)) {
+            if (Array.isArray(candles) && candles.length > 0) {
+              this.candleCache.set(tf.toUpperCase(), candles as Candle[]);
+            }
+          }
+          console.log(`[MT5Bridge] Loaded persisted historical candles from disk: ${Array.from(this.candleCache.keys()).map(k => `${k}(${this.candleCache.get(k)?.length})`).join(', ')}`);
+        }
+      }
+    } catch (err: any) {
+      console.error('[MT5Bridge] Error loading persisted candle cache:', err.message);
+    }
+  }
+
+  private persistCandleCacheToDisk() {
+    if (this.isIsolatedTest) return;
+    try {
+      const dir = path.dirname(this.candleCacheFilePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const obj = Object.fromEntries(this.candleCache.entries());
+      fs.writeFileSync(this.candleCacheFilePath, JSON.stringify(obj, null, 2), 'utf-8');
+    } catch (err: any) {
+      console.error('[MT5Bridge] Error persisting candle cache to disk:', err.message);
+    }
   }
 
   private loadSafetyConfigFromEnv() {
@@ -247,12 +421,34 @@ class MT5BridgeService {
    */
   // Set the server-side active execution mode (ANALYSIS | DEMO | LIVE)
   public setExecutionMode(mode: AccountExecutionMode): { success: boolean; message?: string } {
-    this.activeExecutionMode = mode;
+    const rawMode = String(mode || '').trim().toUpperCase();
+    let targetMode: AccountExecutionMode = 'DEMO';
+
+    if (rawMode === 'ANALYSIS') {
+      targetMode = 'ANALYSIS';
+    } else if (rawMode === 'DEMO') {
+      targetMode = 'DEMO';
+    } else if (rawMode === 'LIVE' || rawMode === 'REAL') {
+      targetMode = 'LIVE';
+      if (!this.isLiveExecutionConfigured()) {
+        return {
+          success: false,
+          message: 'لا يمكن تفعيل نمط التداول الحقيقي (LIVE): الخاصية معطلة في إعدادات الخادم (MT5_LIVE_EXECUTION_ENABLED غير مفعل).',
+        };
+      }
+    } else {
+      return {
+        success: false,
+        message: `نمط تنفيذ غير مدعوم أو غير معروف (${mode}). الأنماط المدعومة: ANALYSIS, DEMO, LIVE.`,
+      };
+    }
+
+    this.activeExecutionMode = targetMode;
     // Reset explicit live authorization whenever mode changes or is re-set
-    if (mode !== 'LIVE') {
+    if (targetMode !== 'LIVE') {
       this.liveTradingAuthorized = false;
     }
-    console.log(`[MT5Bridge] Execution mode set to: ${mode}`);
+    console.log(`[MT5Bridge] Execution mode set to: ${targetMode}`);
     return { success: true };
   }
 
@@ -265,14 +461,10 @@ class MT5BridgeService {
    * Resets to false on restart, reconnect, mode change, or kill-switch.
    */
   public authorizeLiveTrading(): { success: boolean; reason?: string } {
-    if (this.killSwitchActivated) {
-      return { success: false, reason: 'زر الطوارئ مفعّل. يرجى إعادة الضبط أولاً.' };
-    }
-    if (!this.lastStatus.connected) {
-      return { success: false, reason: 'جسر MT5 غير متصل. يرجى تشغيل الجسر أولاً.' };
-    }
-    if (!this.isVerifiedRealAccount()) {
-      return { success: false, reason: 'الحساب المتصل ليس حساباً حقيقياً (REAL Account) موثقاً من MT5.' };
+    const policy = this.evaluateLiveExecutionPolicy();
+    if (!policy.allowed) {
+      this.liveTradingAuthorized = false;
+      return { success: false, reason: policy.reason };
     }
     this.activeExecutionMode = 'LIVE';
     this.liveTradingAuthorized = true;
@@ -316,6 +508,7 @@ class MT5BridgeService {
     }
 
     if (this.activeExecutionMode === 'LIVE') {
+      if (!this.isLiveExecutionConfigured()) return false;
       if (!this.liveTradingAuthorized) return false;
       if (!this.isVerifiedRealAccount()) return false;
       return this.demoAutoTradingEnabled;
@@ -370,6 +563,7 @@ class MT5BridgeService {
    */
   public activateKillSwitch(reason: string = 'Emergency Kill-Switch Triggered'): { success: boolean } {
     this.killSwitchActivated = true;
+    this.killSwitchReason = reason;
     this.demoAutoTradingEnabled = false;
     console.warn(`[MT5Bridge] EMERGENCY KILL-SWITCH ACTIVATED: ${reason}`);
 
@@ -672,13 +866,17 @@ class MT5BridgeService {
     }
 
     if (this.activeExecutionMode === 'LIVE') {
+      const livePolicy = this.evaluateLiveExecutionPolicy();
+      if (!livePolicy.allowed) {
+        return { success: false, reason: livePolicy.reason };
+      }
       if (!this.liveTradingAuthorized) {
         return { success: false, reason: 'التداول الحقيقي (LIVE Trading) يتطلب تفعيلاً وتفويضاً صريحاً من المستخدم.' };
       }
       if (!this.isVerifiedRealAccount()) {
         return { success: false, reason: 'الحساب المتصل ليس حساباً حقيقياً (REAL Account) موثقاً من MT5.' };
       }
-    } else {
+    } else if (this.activeExecutionMode === 'DEMO') {
       // DEMO mode
       if (!this.demoAutoTradingEnabled) {
         return { success: false, reason: 'التداول التجريبي التلقائي معطل حالياً (Auto-trading disabled).' };
@@ -686,6 +884,8 @@ class MT5BridgeService {
       if (!this.isVerifiedDemoAccount()) {
         return { success: false, reason: 'حساب MT5 غير متصل أو ليس حساب DEMO موثق.' };
       }
+    } else {
+      return { success: false, reason: `نمط تنفيذ غير مدعوم (${this.activeExecutionMode}).` };
     }
 
     // 2. Check Consecutive Failures Limit
@@ -799,13 +999,166 @@ class MT5BridgeService {
     return { success: true, commandId };
   }
 
+  public async modifyOrder(params: {
+    ticket: number;
+    stopLoss?: number;
+    takeProfit?: number;
+    accountMode?: string;
+    commandId?: string;
+  }): Promise<{ success: boolean; commandId?: string; message?: string; reason?: string }> {
+    if (!params.ticket || params.ticket <= 0) {
+      return { success: false, reason: 'رقم التذكرة (ticket) غير صالحة.' };
+    }
+
+    if (this.killSwitchActivated) {
+      return { success: false, reason: `تم إيقاف التداول آلياً عبر مفتاح الأمان (Kill-Switch): ${this.killSwitchReason}` };
+    }
+
+    if (!this.isAvailable()) {
+      return { success: false, reason: 'جسر MetaTrader 5 غير متصل أو غير جاهز حالياً.' };
+    }
+
+    if (params.stopLoss !== undefined && (isNaN(params.stopLoss) || params.stopLoss < 0)) {
+      return { success: false, reason: 'قيمة وقف الخسارة (Stop Loss) غير صالحة.' };
+    }
+
+    if (params.takeProfit !== undefined && (isNaN(params.takeProfit) || params.takeProfit < 0)) {
+      return { success: false, reason: 'قيمة هدف الربح (Take Profit) غير صالحة.' };
+    }
+
+    const commandId = params.commandId || `mod_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    if (this.commands.has(commandId)) {
+      const existing = this.commands.get(commandId)!;
+      if (existing.status !== 'REJECTED' && existing.status !== 'FAILED') {
+        return { success: true, commandId, message: 'Command already queued or executed' };
+      }
+    }
+
+    const cmd: MT5ExecutionCommand = {
+      commandId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      action: 'MODIFY',
+      symbol: 'XAUUSD',
+      volume: 0,
+      sl: params.stopLoss ?? 0,
+      tp: params.takeProfit ?? 0,
+      ticket: params.ticket,
+      magic: this.safetyConfig.magicNumber,
+      comment: 'GB-V5 Modify Order',
+      accountMode: params.accountMode || this.activeExecutionMode,
+      status: 'PENDING',
+      retryCount: 0,
+      maxRetries: 2,
+    };
+    this.commands.set(commandId, cmd);
+    console.log(`[MT5Bridge] Modify command queued: ${commandId} for ticket #${params.ticket}`);
+    return { success: true, commandId, message: 'تم إدراج أمر التعديل في قائمة الانتظار.' };
+  }
+
+  public async closeOrder(params: {
+    ticket: number;
+    lot?: number;
+    accountMode?: string;
+    commandId?: string;
+  }): Promise<{ success: boolean; commandId?: string; message?: string; reason?: string }> {
+    if (!params.ticket || params.ticket <= 0) {
+      return { success: false, reason: 'رقم التذكرة (ticket) غير صالحة.' };
+    }
+
+    if (this.killSwitchActivated) {
+      return { success: false, reason: `تم إيقاف التداول آلياً عبر مفتاح الأمان (Kill-Switch): ${this.killSwitchReason}` };
+    }
+
+    if (!this.isAvailable()) {
+      return { success: false, reason: 'جسر MetaTrader 5 غير متصل أو غير جاهز حالياً.' };
+    }
+
+    if (params.lot !== undefined && (isNaN(params.lot) || params.lot < 0)) {
+      return { success: false, reason: 'حجم اللوت المطلوب للإغلاق غير صالح.' };
+    }
+
+    if (params.lot !== undefined && params.lot > 0 && this.symbolSpecs) {
+      const minVol = this.symbolSpecs.volumeMin || 0.01;
+      const maxVol = Math.min(this.symbolSpecs.volumeMax || 100, this.safetyConfig.maxOrderVolume);
+      if (params.lot < minVol) {
+        return { success: false, reason: `حجم اللوت المطلوب للإغلاق (${params.lot}) أقل من الحد الأدنى للوسيط (${minVol}).` };
+      }
+      if (params.lot > maxVol) {
+        return { success: false, reason: `حجم اللوت المطلوب للإغلاق (${params.lot}) يتجاوز الحد المسموح للأمان (${maxVol}).` };
+      }
+    }
+
+    const commandId = params.commandId || `cls_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    if (this.commands.has(commandId)) {
+      const existing = this.commands.get(commandId)!;
+      if (existing.status !== 'REJECTED' && existing.status !== 'FAILED') {
+        return { success: true, commandId, message: 'Command already queued or executed' };
+      }
+    }
+
+    const cmd: MT5ExecutionCommand = {
+      commandId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      action: 'CLOSE',
+      symbol: 'XAUUSD',
+      volume: params.lot ?? 0,
+      sl: 0,
+      tp: 0,
+      ticket: params.ticket,
+      magic: this.safetyConfig.magicNumber,
+      comment: 'GB-V5 Close Order',
+      accountMode: params.accountMode || this.activeExecutionMode,
+      status: 'PENDING',
+      retryCount: 0,
+      maxRetries: 2,
+    };
+    this.commands.set(commandId, cmd);
+    console.log(`[MT5Bridge] Close command queued: ${commandId} for ticket #${params.ticket}`);
+    return { success: true, commandId, message: 'تم إدراج أمر الإغلاق في قائمة الانتظار.' };
+  }
+
+  public async getOrderStatus(ticket: number): Promise<{
+    success: boolean;
+    command?: MT5ExecutionCommand;
+    position?: any;
+    status?: string;
+    message?: string;
+  }> {
+    if (!ticket || ticket <= 0) {
+      return { success: false, message: 'رقم التذكرة (ticket) غير صالحة.' };
+    }
+
+    for (const cmd of this.commands.values()) {
+      if (cmd.ticket === ticket || cmd.orderTicket === ticket || cmd.positionTicket === ticket) {
+        return { success: true, command: cmd, status: cmd.status };
+      }
+    }
+
+    if (this.openPositions.has(ticket)) {
+      const pos = this.openPositions.get(ticket);
+      return {
+        success: true,
+        position: pos,
+        status: 'OPEN',
+      };
+    }
+
+    return { success: false, message: `لم يتم العثور على أمر أو صفقة برقم التذكرة ${ticket}` };
+  }
+
   /**
    * Called by Windows Bridge via GET /api/mt5/bridge/commands/poll
    * Returns commands with status 'PENDING'
    */
   public pollPendingCommands(): MT5ExecutionCommand[] {
-    const pending: MT5ExecutionCommand[] = [];
     const now = Date.now();
+    this.checkCommandTimeouts(now);
+
+    const pending: MT5ExecutionCommand[] = [];
 
     for (const cmd of this.commands.values()) {
       if (cmd.status === 'PENDING') {
@@ -817,10 +1170,25 @@ class MT5BridgeService {
           continue;
         }
 
+        // Live execution policy enforcement at dispatch boundary
+        if (cmd.accountMode === 'LIVE') {
+          const livePolicy = this.evaluateLiveExecutionPolicy();
+          if (!livePolicy.allowed || !this.liveTradingAuthorized) {
+            cmd.status = 'CANCELLED';
+            cmd.failureReason = `تم إلغاء الأمر لتعليق تفويض التداول الحقيقي: ${livePolicy.reason || 'التفويض غير نشط'}.`;
+            cmd.updatedAt = now;
+            continue;
+          }
+        }
+
         cmd.status = 'DISPATCHED';
         cmd.updatedAt = now;
         pending.push(cmd);
       }
+    }
+
+    if (pending.length > 0) {
+      this.persistCommandsToDisk();
     }
 
     return pending;
@@ -828,69 +1196,360 @@ class MT5BridgeService {
 
   /**
    * Called by Windows Bridge via POST /api/mt5/bridge/commands/:commandId/result
+   * Validates execution details and idempotently updates command and ledger state.
    */
-  public handleCommandResult(commandId: string, result: {
-    success: boolean;
-    status: 'FILLED' | 'REJECTED' | 'FAILED';
-    orderTicket?: number;
-    dealTicket?: number;
-    positionTicket?: number;
-    executionPrice?: number;
-    retcode?: number;
-    retcodeDescription?: string;
-    message?: string;
-  }): { success: boolean } {
+  public handleCommandResult(
+    commandId: string,
+    result: {
+      success: boolean;
+      status: 'FILLED' | 'REJECTED' | 'FAILED' | 'CANCELLED';
+      orderTicket?: number;
+      dealTicket?: number;
+      positionTicket?: number;
+      executionPrice?: number;
+      retcode?: number;
+      retcodeDescription?: string;
+      message?: string;
+      orderCancelled?: boolean;
+    },
+    targetStorage: PersistentStorage = storage
+  ): { success: boolean; message?: string } {
     const cmd = this.commands.get(commandId);
     if (!cmd) {
       console.warn(`[MT5Bridge] Received result for unknown command: ${commandId}`);
-      return { success: false };
+      return { success: false, message: 'UNKNOWN_COMMAND' };
     }
 
+    // 1. Idempotency Check: Don't process already finalized terminal commands
+    if (cmd.status === 'FILLED') {
+      return { success: true, message: 'ALREADY_FILLED' };
+    }
+    if (cmd.status === 'REJECTED' || cmd.status === 'FAILED' || cmd.status === 'CANCELLED') {
+      return { success: true, message: 'ALREADY_FINALIZED' };
+    }
+    // Note: If cmd.status === 'UNRESOLVED', allow recovery and resolution when broker confirmation arrives!
+
     cmd.updatedAt = Date.now();
-    cmd.status = result.status;
-    cmd.orderTicket = result.orderTicket;
-    cmd.dealTicket = result.dealTicket;
-    cmd.positionTicket = result.positionTicket || result.orderTicket;
-    cmd.executionPrice = result.executionPrice;
-    cmd.retcode = result.retcode;
-    cmd.retcodeDescription = result.retcodeDescription;
-    cmd.failureReason = result.message;
 
-    if (result.status === 'FILLED') {
-      this.consecutiveFailures = 0; // Reset consecutive failures
-      console.log(`[MT5Bridge] Command ${commandId} successfully FILLED on broker. Ticket: #${cmd.positionTicket}`);
+    // 2. Pending-Order Cancellation Handling
+    // Python bridge handles pending order cancellation via TRADE_ACTION_REMOVE
+    if (cmd.action === 'CANCEL' || result.status === 'CANCELLED' || result.orderCancelled) {
+      const ticket = Number(cmd.ticket || result.orderTicket || result.positionTicket);
+      cmd.status = 'CANCELLED';
+      cmd.orderTicket = ticket;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      this.consecutiveFailures = 0;
 
-      // Notify Telegram
-      telegramService.sendSystemAlert(
-        `✅ <b>تنفيذ صفقة DEMO على منصة MT5</b>\n\n` +
-        `• <b>التذكرة:</b> #${cmd.positionTicket}\n` +
-        `• <b>النوع:</b> ${cmd.action} (${cmd.symbol})\n` +
-        `• <b>الحجم:</b> ${cmd.volume} لوت\n` +
-        `• <b>سعر التنفيذ:</b> $${result.executionPrice?.toFixed(2) || cmd.price?.toFixed(2)}\n` +
-        `• <b>وقف الخسارة (SL):</b> $${cmd.sl.toFixed(2)}\n` +
-        `• <b>الهدف (TP):</b> $${cmd.tp.toFixed(2)}\n` +
-        `• <b>الماجيك:</b> ${cmd.magic}\n` +
-        `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
-      );
-    } else {
+      if (ticket) {
+        const tradeId = `mt5_${ticket}`;
+        const existingTrade = targetStorage.getTrade(tradeId) ||
+          targetStorage.getTrades().find((t) => t.brokerPositionTicket === ticket || t.brokerOrderId === String(ticket));
+        if (existingTrade && existingTrade.result === 'OPEN') {
+          targetStorage.closeTrade(
+            existingTrade.id,
+            'CANCELLED',
+            0,
+            undefined,
+            `Cancelled pending order #${ticket}`
+          );
+        }
+      }
+
+      this.persistCommandsToDisk();
+      console.log(`[MT5Bridge] Command ${commandId} cancelled order #${ticket} safely without phantom trades.`);
+      return { success: true, message: 'CANCELLED' };
+    }
+
+    // 3. Handle Non-FILLED Results (REJECTED or FAILED)
+    if (result.status !== 'FILLED') {
+      cmd.status = result.status;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      cmd.failureReason = result.message || result.retcodeDescription || 'Broker Rejected';
       this.consecutiveFailures += 1;
-      console.warn(`[MT5Bridge] Command ${commandId} ${result.status}: ${result.message} (Failures: ${this.consecutiveFailures})`);
+
+      console.warn(
+        `[MT5Bridge] Command ${commandId} ${result.status}: ${cmd.failureReason} (Failures: ${this.consecutiveFailures})`
+      );
 
       if (this.consecutiveFailures >= this.safetyConfig.maxConsecutiveFailures) {
         this.activateKillSwitch(`تجاوز عدد أخطاء التنفيذ المتتالية (${this.consecutiveFailures} أخطاء).`);
       }
 
-      // Notify Telegram of rejection
-      telegramService.sendSystemAlert(
-        `⚠️ <b>فشل تنفيذ أمر MT5 DEMO</b>\n\n` +
-        `• <b>الأمر:</b> ${cmd.action} ${cmd.symbol}\n` +
-        `• <b>السبب:</b> ${result.message || result.retcodeDescription || 'Broker Rejected'}\n` +
-        `• <b>كود الوسيط:</b> ${result.retcode || 'N/A'}\n` +
-        `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
-      );
+      // Safe Telegram dispatch: only for production storage singleton
+      if (!targetStorage.isTestingMode() && targetStorage === storage) {
+        telegramService.sendSystemAlert(
+          `⚠️ <b>فشل تنفيذ أمر MT5 DEMO</b>\n\n` +
+          `• <b>الأمر:</b> ${cmd.action} ${cmd.symbol}\n` +
+          `• <b>السبب:</b> ${cmd.failureReason}\n` +
+          `• <b>كود الوسيط:</b> ${result.retcode || 'N/A'}\n` +
+          `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
+        );
+      }
+
+      this.persistCommandsToDisk();
+      return { success: true, message: 'COMMAND_REJECTED' };
     }
 
-    return { success: true };
+    // 4. Handle FILLED Results by Action
+    if (cmd.action === 'BUY' || cmd.action === 'SELL') {
+      const ticket = Number(result.positionTicket || result.orderTicket);
+      const execPrice = Number(result.executionPrice !== undefined ? result.executionPrice : cmd.price);
+      const volume = Number(cmd.volume);
+
+      // Validation: Strict fail-closed on missing or invalid execution parameters
+      if (!Number.isInteger(ticket) || ticket <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Missing or invalid ticket for position opening';
+        console.warn(`[MT5Bridge] Command ${commandId} failed: missing/invalid ticket (${result.positionTicket || result.orderTicket})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'MISSING_OR_INVALID_TICKET' };
+      }
+
+      if (isNaN(execPrice) || !Number.isFinite(execPrice) || execPrice <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Missing or invalid execution price';
+        console.warn(`[MT5Bridge] Command ${commandId} failed: missing/invalid execution price (${execPrice})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'MISSING_OR_INVALID_PRICE' };
+      }
+
+      if (isNaN(volume) || !Number.isFinite(volume) || volume <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Invalid volume';
+        console.warn(`[MT5Bridge] Command ${commandId} failed: invalid volume (${volume})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'INVALID_VOLUME' };
+      }
+
+      // Mark command filled
+      cmd.status = 'FILLED';
+      cmd.positionTicket = ticket;
+      cmd.orderTicket = Number(result.orderTicket) || ticket;
+      cmd.dealTicket = Number(result.dealTicket) || undefined;
+      cmd.executionPrice = execPrice;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      this.consecutiveFailures = 0;
+
+      // Idempotently create managed open trade in ledger
+      const tradeId = `mt5_${ticket}`;
+      const existingTrade = targetStorage.getTrade(tradeId);
+      if (!existingTrade) {
+        const sl = Number.isFinite(cmd.sl) ? cmd.sl : 0;
+        const tp1 = Number.isFinite(cmd.tp) ? cmd.tp : 0;
+        const tp2 = (cmd.tp2 && Number.isFinite(cmd.tp2)) ? cmd.tp2 : undefined;
+        const slPoints = sl > 0 ? Math.round(Math.abs(execPrice - sl) / 0.1) : 0;
+        const tp1Points = tp1 > 0 ? Math.round(Math.abs(tp1 - execPrice) / 0.1) : 0;
+        const tp2Points = (tp2 && tp2 > 0) ? Math.round(Math.abs(tp2 - execPrice) / 0.1) : undefined;
+
+        const currentCap = typeof targetStorage.getCurrentBalance === 'function'
+          ? targetStorage.getCurrentBalance()
+          : targetStorage.getSettings().manualCapital;
+
+        const tradeItem: TradeLedgerItem = {
+          id: tradeId,
+          signalId: cmd.commandId,
+          tradeNumber: (targetStorage.getTrades(1)[0]?.tradeNumber || 0) + 1,
+          date: new Date().toLocaleDateString('ar-EG', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          isoTime: new Date().toISOString(),
+          asset: 'XAU/USD',
+          direction: cmd.action === 'BUY' ? 'BUY NOW' : 'SELL NOW',
+          entry: execPrice,
+          sl,
+          slPoints,
+          tp1,
+          tp1Points,
+          tp2,
+          tp2Points,
+          rr: tp1Points > 0 && slPoints > 0 ? `1:${(tp1Points / slPoints).toFixed(1)}` : '1:2.0',
+          riskPercent: 1.5,
+          riskAmount: 1.5,
+          lotSize: volume,
+          confidence: 85,
+          setup: 'GB-V5 Demo Execution',
+          result: 'OPEN',
+          pl: 0,
+          balanceAfterTrade: currentCap,
+          notes: `Executed via Windows MT5 Demo Bridge [Ticket #${ticket}]`,
+          isActive: true,
+          source: 'MT5' as any,
+          brokerPositionTicket: ticket,
+          brokerOrderId: String(result.orderTicket || ticket),
+        };
+        targetStorage.saveTrade(tradeItem);
+        console.log(`[MT5Bridge] Open trade ${tradeId} created in ledger for command ${commandId}`);
+      }
+
+      if (!targetStorage.isTestingMode() && targetStorage === storage) {
+        telegramService.sendSystemAlert(
+          `✅ <b>تنفيذ صفقة DEMO على منصة MT5</b>\n\n` +
+          `• <b>التذكرة:</b> #${ticket}\n` +
+          `• <b>النوع:</b> ${cmd.action} (${cmd.symbol})\n` +
+          `• <b>الحجم:</b> ${volume} لوت\n` +
+          `• <b>سعر التنفيذ:</b> $${execPrice.toFixed(2)}\n` +
+          `• <b>وقف الخسارة (SL):</b> $${cmd.sl.toFixed(2)}\n` +
+          `• <b>الهدف (TP):</b> $${cmd.tp.toFixed(2)}\n` +
+          `• <b>الماجيك:</b> ${cmd.magic}\n` +
+          `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
+        );
+      }
+
+      this.persistCommandsToDisk();
+      return { success: true, message: 'FILLED' };
+    } else if (cmd.action === 'MODIFY') {
+      const ticket = Number(cmd.ticket || result.positionTicket || result.orderTicket);
+      if (!Number.isInteger(ticket) || ticket <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Missing or invalid ticket for modify';
+        console.warn(`[MT5Bridge] Modify command ${commandId} failed: invalid ticket (${ticket})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'MISSING_OR_INVALID_TICKET' };
+      }
+
+      cmd.status = 'FILLED';
+      cmd.positionTicket = ticket;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      this.consecutiveFailures = 0;
+
+      // Locate existing trade to update SL/TP in place without creating new ledger entry
+      const tradeId = `mt5_${ticket}`;
+      const existingTrade = targetStorage.getTrade(tradeId) ||
+        targetStorage.getTrades().find((t) =>
+          t.brokerPositionTicket === ticket ||
+          (t.notes && new RegExp(`\\b(Ticket|Position)\\s*#?\\s*${ticket}\\b`).test(t.notes))
+        );
+
+      if (existingTrade && existingTrade.result === 'OPEN') {
+        if (Number.isFinite(cmd.sl) && cmd.sl > 0) {
+          existingTrade.sl = cmd.sl;
+          existingTrade.slPoints = Math.round(Math.abs(existingTrade.entry - cmd.sl) / 0.1);
+        }
+        if (Number.isFinite(cmd.tp) && cmd.tp > 0) {
+          existingTrade.tp1 = cmd.tp;
+          existingTrade.tp1Points = Math.round(Math.abs(cmd.tp - existingTrade.entry) / 0.1);
+        }
+        if (cmd.tp2 && Number.isFinite(cmd.tp2) && cmd.tp2 > 0) {
+          existingTrade.tp2 = cmd.tp2;
+          existingTrade.tp2Points = Math.round(Math.abs(cmd.tp2 - existingTrade.entry) / 0.1);
+        }
+        const modNote = `Modified SL: $${cmd.sl}, TP: $${cmd.tp}`;
+        existingTrade.notes = existingTrade.notes ? `${existingTrade.notes} | ${modNote}` : modNote;
+        targetStorage.saveTrade(existingTrade);
+        console.log(`[MT5Bridge] Trade ${existingTrade.id} SL/TP updated for modify command ${commandId}`);
+      } else {
+        console.warn(`[MT5Bridge] Modify command filled for ticket #${ticket}, but no matching open trade found in ledger. Zero phantom trade created.`);
+      }
+
+      this.persistCommandsToDisk();
+      return { success: true, message: 'FILLED' };
+    } else if (cmd.action === 'CLOSE') {
+      const ticket = Number(cmd.ticket || result.positionTicket || result.orderTicket);
+      const exitPrice = Number(result.executionPrice);
+
+      if (!Number.isInteger(ticket) || ticket <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Missing or invalid ticket for close';
+        console.warn(`[MT5Bridge] Close command ${commandId} failed: invalid ticket (${ticket})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'MISSING_OR_INVALID_TICKET' };
+      }
+
+      if (isNaN(exitPrice) || !Number.isFinite(exitPrice) || exitPrice <= 0) {
+        cmd.status = 'FAILED';
+        cmd.failureReason = 'Missing or invalid exit price for close';
+        console.warn(`[MT5Bridge] Close command ${commandId} failed: invalid exit price (${exitPrice})`);
+        this.persistCommandsToDisk();
+        return { success: false, message: 'MISSING_OR_INVALID_PRICE' };
+      }
+
+      cmd.status = 'FILLED';
+      cmd.positionTicket = ticket;
+      cmd.executionPrice = exitPrice;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      this.consecutiveFailures = 0;
+
+      // Locate existing open trade to settle without creating new opening trade entry
+      const tradeId = `mt5_${ticket}`;
+      const existingTrade = targetStorage.getTrade(tradeId) ||
+        targetStorage.getTrades().find((t) =>
+          t.brokerPositionTicket === ticket ||
+          (t.notes && new RegExp(`\\b(Ticket|Position)\\s*#?\\s*${ticket}\\b`).test(t.notes))
+        );
+
+      if (existingTrade) {
+        // If trade is already authoritatively settled by deal report, preserve authoritative settlement
+        if (existingTrade.isAuthoritative || existingTrade.result !== 'OPEN') {
+          console.log(`[MT5Bridge] Trade ${existingTrade.id} already authoritatively settled via MT5 Deal. Preserving authoritative PnL: $${existingTrade.pl}`);
+        } else {
+          const lotSize = Number(cmd.volume || existingTrade.lotSize || 0.01);
+          const isBuy = existingTrade.direction.toUpperCase().includes('BUY');
+          const diff = isBuy
+            ? (exitPrice - existingTrade.entry)
+            : (existingTrade.entry - exitPrice);
+          const realizedPnl = Number((diff * lotSize * 100).toFixed(2));
+          const outcome: 'WIN' | 'LOSS' = realizedPnl >= 0 ? 'WIN' : 'LOSS';
+
+          existingTrade.isInterimClose = true;
+          targetStorage.closeTrade(
+            existingTrade.id,
+            outcome,
+            realizedPnl,
+            exitPrice,
+            `Closed via MT5 Bridge CLOSE command [Ticket #${ticket}]`
+          );
+          console.log(`[MT5Bridge] Trade ${existingTrade.id} settled via close command ${commandId} with interim PnL: $${realizedPnl}`);
+        }
+      } else {
+        console.warn(`[MT5Bridge] Close command filled for ticket #${ticket}, but no matching open trade found in ledger. Zero phantom trade created.`);
+      }
+
+      this.persistCommandsToDisk();
+      return { success: true, message: 'FILLED' };
+    }
+
+    this.persistCommandsToDisk();
+    return { success: true, message: 'FILLED' };
+  }
+
+  public getCommand(commandId: string): MT5ExecutionCommand | undefined {
+    return this.commands.get(commandId);
+  }
+
+  public cancelOrder(ticket: number, comment: string = 'GB-V5 Cancel Order'): { success: boolean; commandId?: string; reason?: string } {
+    if (!Number.isInteger(ticket) || ticket <= 0) {
+      return { success: false, reason: 'رقم التذكرة غير صالح' };
+    }
+    const commandId = `cmd_cancel_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const cmd: MT5ExecutionCommand = {
+      commandId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      action: 'CANCEL',
+      symbol: 'XAUUSD',
+      volume: 0,
+      sl: 0,
+      tp: 0,
+      ticket,
+      magic: this.safetyConfig.magicNumber,
+      comment,
+      accountMode: this.activeExecutionMode,
+      status: 'PENDING',
+      retryCount: 0,
+      maxRetries: 2,
+    };
+    this.commands.set(commandId, cmd);
+    this.persistCommandsToDisk();
+    console.log(`[MT5Bridge] Cancel order queued for ticket #${ticket} [Command: ${commandId}]`);
+    return { success: true, commandId };
   }
 
   // =========================================================================
@@ -901,7 +1560,10 @@ class MT5BridgeService {
    * Called by Windows Bridge via POST /api/mt5/bridge/deals
    * Reconciles closed deals from MT5 with trade ledger and realized PnL
    */
-  public handleDealsReport(deals: MT5DealRecord[]): {
+  public handleDealsReport(
+    deals: MT5DealRecord[],
+    targetStorage: PersistentStorage = storage
+  ): {
     success: boolean;
     processedCount: number;
     duplicateCount: number;
@@ -931,7 +1593,7 @@ class MT5BridgeService {
       this.processedDealTickets.add(ticket);
 
       const netPnl = Number(((deal.profit || 0) + (deal.commission || 0) + (deal.swap || 0)).toFixed(2));
-      const res = storage.reconcileMt5Trade({
+      const res = targetStorage.reconcileMt5Trade({
         signalOrTradeId: `mt5_${deal.positionId || deal.order || ticket}`,
         brokerDealId: String(ticket),
         brokerOrderId: String(deal.order),
@@ -949,18 +1611,24 @@ class MT5BridgeService {
 
       if (res.success) {
         processedCount++;
-        const emoji = netPnl >= 0 ? '🎉 ربح' : '⚠️ خسارة';
-        telegramService.sendSystemAlert(
-          `📊 <b>تسوية صفقة MT5 DEMO مغلقة</b>\n\n` +
-          `• <b>التذكرة:</b> #${deal.positionId || ticket}\n` +
-          `• <b>تذكرة الصفقة:</b> #${ticket}\n` +
-          `• <b>النوع:</b> ${deal.type === 0 ? 'BUY' : 'SELL'} (${deal.volume} لوت)\n` +
-          `• <b>النتيجة:</b> ${emoji} ($${netPnl.toFixed(2)})\n` +
-          `• <b>سعر الإغلاق:</b> $${deal.price?.toFixed(2)}\n` +
-          `• <b>العمولة/السواب:</b> $${((deal.commission || 0) + (deal.swap || 0)).toFixed(2)}\n` +
-          `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
-        );
+        if (!targetStorage.isTestingMode() && targetStorage === storage) {
+          const emoji = netPnl >= 0 ? '🎉 ربح' : '⚠️ خسارة';
+          telegramService.sendSystemAlert(
+            `📊 <b>تسوية صفقة MT5 DEMO مغلقة</b>\n\n` +
+            `• <b>التذكرة:</b> #${deal.positionId || ticket}\n` +
+            `• <b>تذكرة الصفقة:</b> #${ticket}\n` +
+            `• <b>النوع:</b> ${deal.type === 0 ? 'BUY' : 'SELL'} (${deal.volume} لوت)\n` +
+            `• <b>النتيجة:</b> ${emoji} ($${netPnl.toFixed(2)})\n` +
+            `• <b>سعر الإغلاق:</b> $${deal.price?.toFixed(2)}\n` +
+            `• <b>العمولة/السواب:</b> $${((deal.commission || 0) + (deal.swap || 0)).toFixed(2)}\n` +
+            `⏱ <i>${new Date().toLocaleTimeString('ar-EG')}</i>`
+          );
+        }
       }
+    }
+
+    if (processedCount > 0) {
+      this.persistCommandsToDisk();
     }
 
     return { success: true, processedCount, duplicateCount };
@@ -990,6 +1658,7 @@ class MT5BridgeService {
     const merged = Array.from(candleMap.values()).sort((a, b) => a.timestamp - b.timestamp);
     this.candleCache.set(tf, merged);
     this.lastCandleSyncTime = Date.now();
+    this.persistCandleCacheToDisk();
     console.log(`[MT5Bridge] Stored ${merged.length} historical candles for ${tf} from MT5 (incoming batch: ${candles.length}).`);
   }
 
@@ -1001,6 +1670,11 @@ class MT5BridgeService {
   public hasHistoricalCandles(timeframe: string): boolean {
     const candles = this.getHistoricalCandles(timeframe);
     return Boolean(candles && candles.length >= 30);
+  }
+
+  public clearCandleCache(): void {
+    this.candleCache.clear();
+    this.lastCandleSyncTime = 0;
   }
 
   // =========================================================================
@@ -1016,6 +1690,9 @@ class MT5BridgeService {
         demoAutoTradingEnabled: this.demoAutoTradingEnabled,
         killSwitchActivated: this.killSwitchActivated,
         isVerifiedDemo: this.isVerifiedDemoAccount(),
+        isVerifiedReal: this.isVerifiedRealAccount(),
+        isLiveConfigured: this.isLiveExecutionConfigured(),
+        liveTradingAuthorized: this.liveTradingAuthorized,
         isAutoTradingActive: this.isDemoAutoTradingActive(),
         consecutiveFailures: this.consecutiveFailures,
         safetyConfig: { ...this.safetyConfig },

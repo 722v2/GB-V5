@@ -31,6 +31,157 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+  // Known insecure placeholder secrets that must never be accepted
+  const KNOWN_PLACEHOLDER_SECRETS = new Set([
+    'your_secure_random_bridge_token_here',
+    'your_admin_secret_here',
+    'your_secure_admin_key_here',
+    'your_admin_api_key_here',
+    'your_cron_secret_here',
+    'your_scanner_cron_secret_here',
+    'cron_secret',
+    'cron',
+    'admin_api_key',
+    'admin',
+    'password',
+    'change_me',
+    'changeme',
+    'default',
+    'default_admin_key',
+    '123456',
+    '12345678',
+  ]);
+
+  const getAdminSecretValidation = (): { isValid: boolean; secret: string; error?: string } => {
+    // Dedicated admin secret ONLY from ADMIN_API_KEY (or optional alias ADMIN_SECRET)
+    // Strictly NO fallback to MT5_BRIDGE_TOKEN, MT5_API_KEY, or CRON_SECRET
+    const rawKey = (process.env.ADMIN_API_KEY || process.env.ADMIN_SECRET || '').trim();
+
+    if (!rawKey) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'ADMIN_API_KEY is not configured in the server environment.',
+      };
+    }
+
+    const normalized = rawKey.toLowerCase();
+    if (KNOWN_PLACEHOLDER_SECRETS.has(normalized)) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'ADMIN_API_KEY is set to an insecure default placeholder.',
+      };
+    }
+
+    if (rawKey.length < 8) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'ADMIN_API_KEY is too short (must be at least 8 characters).',
+      };
+    }
+
+    return {
+      isValid: true,
+      secret: rawKey,
+    };
+  };
+
+  // Sensitive Admin API Authorization Middleware (fails closed if admin secret is missing/invalid)
+  const verifyAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const validation = getAdminSecretValidation();
+    if (!validation.isValid) {
+      return res.status(503).json({
+        success: false,
+        error: `Service Unavailable: Admin authentication is unavailable (${validation.error}).`,
+      });
+    }
+
+    const configuredAdminKey = validation.secret;
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : (req.headers['x-admin-key'] as string || req.headers['x-api-key'] as string || authHeader).trim();
+
+    if (!token || token !== configuredAdminKey) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Admin authentication token required for sensitive operations.',
+      });
+    }
+
+    next();
+  };
+
+  const getCronSecretValidation = (): { isValid: boolean; secret: string; error?: string } => {
+    // Dedicated cron secret ONLY from CRON_SECRET (or optional alias SCANNER_CRON_SECRET)
+    // Strictly NO fallback to ADMIN_API_KEY, ADMIN_SECRET, MT5_BRIDGE_TOKEN, or MT5_API_KEY
+    const rawKey = (process.env.CRON_SECRET || process.env.SCANNER_CRON_SECRET || '').trim();
+
+    if (!rawKey) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'CRON_SECRET is not configured in the server environment.',
+      };
+    }
+
+    const normalized = rawKey.toLowerCase();
+    if (KNOWN_PLACEHOLDER_SECRETS.has(normalized)) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'CRON_SECRET is set to an insecure default placeholder.',
+      };
+    }
+
+    if (rawKey.length < 8) {
+      return {
+        isValid: false,
+        secret: '',
+        error: 'CRON_SECRET is too short (must be at least 8 characters).',
+      };
+    }
+
+    return {
+      isValid: true,
+      secret: rawKey,
+    };
+  };
+
+  // Scheduled Cron Webhook Authorization Middleware (fails closed if cron secret is missing/invalid)
+  const verifyCronAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const validation = getCronSecretValidation();
+    if (!validation.isValid) {
+      return res.status(503).json({
+        success: false,
+        error: `Service Unavailable: Cron authentication is unavailable (${validation.error}).`,
+      });
+    }
+
+    const configuredCronSecret = validation.secret;
+    const authHeader = req.headers.authorization || '';
+    const headerToken = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : (req.headers['x-cron-secret'] as string || req.headers['x-api-key'] as string || '').trim();
+    const queryToken = typeof req.query.secret === 'string'
+      ? req.query.secret.trim()
+      : typeof req.query.key === 'string'
+      ? req.query.key.trim()
+      : '';
+    const token = headerToken || queryToken;
+
+    if (!token || token !== configuredCronSecret) {
+      return res.status(401).json({
+        success: false,
+        error: 'Unauthorized: Valid cron secret required for scheduled scan trigger.',
+      });
+    }
+
+    next();
+  };
+
   // Health check endpoint (Requirement 9 & Pre-Deployment Audit)
   app.get('/api/health', (req, res) => {
     const report = scanner.getHealthReport();
@@ -201,7 +352,7 @@ async function startServer() {
 
       // Gather multi-timeframe live market data
       const marketData = await getMultiTimeframeData(asset);
-      const rawTs = marketData.quote?.timestamp;
+      const rawTs = marketData.quote?.timestamp as unknown;
       const quoteTime = typeof rawTs === 'number'
         ? rawTs
         : typeof rawTs === 'string'
@@ -316,7 +467,7 @@ async function startServer() {
   });
 
   // Run XAU/USD Historical Backtesting Engine (Strictly Real Data, Zero Mock)
-  app.post('/api/backtest/run', async (req, res) => {
+  app.post('/api/backtest/run', verifyAdminAuth, async (req, res) => {
     try {
       const { initialCapital = 10, timeRange = '7D', riskPercent, allowAvailableSlice } = req.body || {};
       const parsedCapital = Number(initialCapital) || 10;
@@ -392,25 +543,6 @@ async function startServer() {
     }
   });
 
-  // Sensitive Admin API Authorization Middleware
-  const verifyAdminAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const { key: configuredAdminKey } = getAdminKey();
-
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : (req.headers['x-admin-key'] as string || req.headers['x-api-key'] as string || authHeader).trim();
-
-    if (!token || token !== configuredAdminKey) {
-      return res.status(401).json({
-        success: false,
-        error: 'Unauthorized: Admin authentication token required for sensitive operations.',
-      });
-    }
-
-    next();
-  };
-
   app.post('/api/account/balance', verifyAdminAuth, (req, res) => {
     try {
       const { currentBalance, startingBalance } = req.body || {};
@@ -464,48 +596,41 @@ async function startServer() {
     }
   });
 
-  // Stable Admin Key Resolution for private single-user application
-  const DEFAULT_ADMIN_KEY = 'your_secure_random_bridge_token_here';
-
-  const getAdminKey = (): { key: string; source: string } => {
-    const envAdminKey = (process.env.ADMIN_API_KEY || '').trim();
-    if (envAdminKey) {
-      return { key: envAdminKey, source: 'ADMIN_API_KEY' };
-    }
-    const envBridgeToken = (process.env.MT5_BRIDGE_TOKEN || process.env.MT5_API_KEY || '').trim();
-    if (envBridgeToken) {
-      return { key: envBridgeToken, source: 'MT5_BRIDGE_TOKEN' };
-    }
-    return { key: DEFAULT_ADMIN_KEY, source: 'DEFAULT' };
-  };
-
   // GET /api/auth/config - Metadata ONLY for UI authorization state (NEVER EXPOSES SECRETS)
   app.get('/api/auth/config', (req, res) => {
-    const { source } = getAdminKey();
-    const { key: configuredAdminKey } = getAdminKey();
+    const validation = getAdminSecretValidation();
     const authHeader = req.headers.authorization || '';
     const token = authHeader.startsWith('Bearer ')
       ? authHeader.slice(7).trim()
       : (req.headers['x-admin-key'] as string || req.headers['x-api-key'] as string || authHeader).trim();
 
-    const isAuthenticated = Boolean(token && token === configuredAdminKey);
+    const isAuthenticated = Boolean(validation.isValid && token && token === validation.secret);
 
     res.json({
       success: true,
-      isConfigured: true,
-      source,
+      isConfigured: validation.isValid,
+      source: validation.isValid ? 'ADMIN_API_KEY' : 'UNCONFIGURED',
       requiresAuth: true,
       authenticated: isAuthenticated,
+      error: validation.isValid ? undefined : validation.error,
     });
   });
 
   // POST /api/auth/verify - Verifies an admin authentication key submitted by the frontend client
   app.post('/api/auth/verify', (req, res) => {
+    const validation = getAdminSecretValidation();
+    if (!validation.isValid) {
+      return res.status(503).json({
+        success: false,
+        authenticated: false,
+        error: `Admin authentication is unavailable: ${validation.error}`,
+      });
+    }
+
     const { key } = req.body || {};
-    const { key: configuredKey } = getAdminKey();
     const submittedKey = (key || '').trim();
 
-    if (!submittedKey || submittedKey !== configuredKey) {
+    if (!submittedKey || submittedKey !== validation.secret) {
       return res.status(401).json({
         success: false,
         authenticated: false,
@@ -531,7 +656,10 @@ async function startServer() {
 
       const updatedSettings = saveResult.settings;
       if (updatedSettings.accountMode) {
-        mt5Bridge.setExecutionMode(updatedSettings.accountMode);
+        const modeResult = mt5Bridge.setExecutionMode(updatedSettings.accountMode);
+        if (!modeResult.success) {
+          return res.status(400).json({ success: false, error: modeResult.message });
+        }
       }
       const mt5Status = await mt5Bridge.getAccountStatus();
       let activeCapital = updatedSettings.manualCapital;
@@ -617,46 +745,7 @@ async function startServer() {
   app.post('/api/mt5/bridge/commands/:commandId/result', verifyBridgeToken, (req, res) => {
     try {
       const { commandId } = req.params;
-      const result = mt5Bridge.handleCommandResult(commandId, req.body);
-      
-      // If filled, save to ledger
-      if (req.body.status === 'FILLED') {
-        const cmdStatus = mt5Bridge.getStatus();
-        const cmd = cmdStatus.commands.recent.find((c) => c.commandId === commandId);
-        if (cmd) {
-          const tradeItem: any = {
-            id: `mt5_${req.body.positionTicket || req.body.orderTicket || Date.now()}`,
-            tradeNumber: (storage.getTrades(1)[0]?.tradeNumber || 0) + 1,
-            date: new Date().toLocaleDateString('ar-EG', {
-              month: 'short',
-              day: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            }),
-            isoTime: new Date().toISOString(),
-            asset: 'XAU/USD',
-            direction: cmd.action,
-            entry: req.body.executionPrice || cmd.price,
-            sl: cmd.sl,
-            slPoints: Math.round(Math.abs((req.body.executionPrice || cmd.price || 0) - cmd.sl) / 0.1),
-            tp1: cmd.tp,
-            tp1Points: Math.round(Math.abs(cmd.tp - (req.body.executionPrice || cmd.price || 0)) / 0.1),
-            tp2: cmd.tp2,
-            tp2Points: cmd.tp2 ? Math.round(Math.abs(cmd.tp2 - (req.body.executionPrice || cmd.price || 0)) / 0.1) : undefined,
-            rr: '1:2.0',
-            riskPercent: 1.5,
-            riskAmount: 1.5,
-            lotSize: cmd.volume,
-            confidence: 85,
-            setup: 'GB-V5 Demo Execution',
-            result: 'OPEN',
-            balanceAfterTrade: storage.getSettings().manualCapital,
-            notes: `Executed via Windows MT5 Demo Bridge [Ticket #${req.body.positionTicket || req.body.orderTicket}]`,
-          };
-          storage.saveTrade(tradeItem);
-        }
-      }
-
+      const result = mt5Bridge.handleCommandResult(commandId, req.body, storage);
       res.json(result);
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
@@ -684,7 +773,7 @@ async function startServer() {
       if (!Array.isArray(deals)) {
         return res.status(400).json({ success: false, error: 'deals array required' });
       }
-      const result = mt5Bridge.handleDealsReport(deals);
+      const result = mt5Bridge.handleDealsReport(deals, storage);
       res.json(result);
     } catch (error: any) {
       res.status(500).json({ success: false, error: error.message });
@@ -1193,7 +1282,7 @@ async function startServer() {
   });
 
   // Phase 4: Trade Management Test Suite
-  app.get('/api/trade-management/tests', async (req, res) => {
+  app.get('/api/trade-management/tests', verifyAdminAuth, async (req, res) => {
     try {
       const testReport = await runTradeManagementTests();
       res.json({ success: true, ...testReport });
@@ -1254,8 +1343,8 @@ async function startServer() {
       res.status(500).json({ success: false, error: error.message });
     }
   };
-  app.get('/api/scanner/cron-tick', handleCronTick);
-  app.post('/api/scanner/cron-tick', handleCronTick);
+  app.get('/api/scanner/cron-tick', verifyCronAuth, handleCronTick);
+  app.post('/api/scanner/cron-tick', verifyCronAuth, handleCronTick);
 
   // Get persisted trade outcomes
   app.get('/api/outcomes', (req, res) => {
@@ -1381,7 +1470,7 @@ async function startServer() {
   });
 
   // Accounting and P&L diagnostic test suite endpoint
-  app.get('/api/tests/accounting', (req, res) => {
+  app.get('/api/tests/accounting', verifyAdminAuth, (req, res) => {
     try {
       const suiteResult = runAccountingTests();
       res.json({

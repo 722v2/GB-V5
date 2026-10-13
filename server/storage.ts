@@ -185,6 +185,57 @@ export function isSyntheticTestRecord(trade: any): boolean {
   return false;
 }
 
+export interface ITelegramNotifier {
+  sendOutcomeNotification(outcome: TradeOutcomeRecord, trade?: TradeLedgerItem, options?: any): Promise<boolean>;
+  sendManagementNotification(formattedMessage: string, options?: any): Promise<boolean>;
+  isTelegramDispatched(key: string): boolean;
+  saveTelegramDispatch(key: string): void;
+  getDispatchedKeys(): string[];
+}
+
+export class LiveTelegramNotifier implements ITelegramNotifier {
+  async sendOutcomeNotification(outcome: TradeOutcomeRecord, trade?: TradeLedgerItem, options?: any): Promise<boolean> {
+    return telegramService.sendOutcomeNotification(outcome, trade, options);
+  }
+  async sendManagementNotification(formattedMessage: string, options?: any): Promise<boolean> {
+    return telegramService.sendManagementNotification(formattedMessage, options);
+  }
+  isTelegramDispatched(key: string): boolean {
+    return telegramService.isTelegramDispatched(key);
+  }
+  saveTelegramDispatch(key: string): void {
+    telegramService.saveTelegramDispatch(key);
+  }
+  getDispatchedKeys(): string[] {
+    return [];
+  }
+}
+
+export class NullTelegramNotifier implements ITelegramNotifier {
+  private dispatches: Set<string> = new Set();
+  public events: Array<{ type: string; payload: any }> = [];
+
+  async sendOutcomeNotification(outcome: TradeOutcomeRecord, trade?: TradeLedgerItem, options?: any): Promise<boolean> {
+    if (options?.notificationId) this.dispatches.add(options.notificationId);
+    this.events.push({ type: 'OUTCOME', payload: { outcome, trade, options } });
+    return true;
+  }
+  async sendManagementNotification(formattedMessage: string, options?: any): Promise<boolean> {
+    if (options?.notificationId) this.dispatches.add(options.notificationId);
+    this.events.push({ type: 'MANAGEMENT', payload: { formattedMessage, options } });
+    return true;
+  }
+  isTelegramDispatched(key: string): boolean {
+    return this.dispatches.has(key);
+  }
+  saveTelegramDispatch(key: string): void {
+    this.dispatches.add(key);
+  }
+  getDispatchedKeys(): string[] {
+    return Array.from(this.dispatches);
+  }
+}
+
 export class PersistentStorage {
   private inMemoryScans: ScanRecord[] = [];
   private inMemorySignals: TradeSignal[] = [];
@@ -216,13 +267,48 @@ export class PersistentStorage {
   private isReady = false;
   private isTesting = process.env.IS_TESTING === 'true' || process.env.NODE_ENV === 'test';
   private readyPromise: Promise<void>;
+  public readonly isProductionStorage: boolean;
+  public readonly isIsolatedTest: boolean;
+  private telegramNotifier: ITelegramNotifier;
 
-  constructor() {
-    this.ensureDataDirectory();
-    this.readyPromise = this.init();
+  constructor(options?: { isIsolatedTest?: boolean; isProductionStorage?: boolean; telegramNotifier?: ITelegramNotifier }) {
+    this.isIsolatedTest = Boolean(options?.isIsolatedTest);
+    this.isProductionStorage = options?.isProductionStorage ?? true;
+    this.telegramNotifier = options?.telegramNotifier || (this.isProductionStorage ? new LiveTelegramNotifier() : new NullTelegramNotifier());
+    if (options?.isIsolatedTest) {
+      this.isTesting = true;
+      this.isProductionStorage = false;
+      this.isReady = true;
+      this.readyPromise = Promise.resolve();
+    } else {
+      this.ensureDataDirectory();
+      this.readyPromise = this.init();
+    }
+  }
+
+  public static createIsolatedTestInstance(initialBalance: number = 100.0): PersistentStorage {
+    const inst = new PersistentStorage({ isIsolatedTest: true, isProductionStorage: false, telegramNotifier: new NullTelegramNotifier() });
+    inst.inMemoryStartingBalance = initialBalance;
+    inst.inMemoryCurrentBalance = initialBalance;
+    return inst;
+  }
+
+  public getTelegramNotifier(): ITelegramNotifier {
+    return this.telegramNotifier;
+  }
+
+  public assertIsolatedTestStorage(actionName: string): void {
+    if (this.isProductionStorage) {
+      throw new Error(
+        `HARD SAFETY GUARD TRIGGERED: Refusing state-mutating test operation '${actionName}' on production storage instance!`
+      );
+    }
   }
 
   public setTestingMode(val: boolean) {
+    if (val && this.isProductionStorage) {
+      this.assertIsolatedTestStorage('setTestingMode');
+    }
     this.isTesting = val;
     if (val) {
       this.inMemoryOutcomes = this.inMemoryOutcomes.filter(
@@ -247,6 +333,9 @@ export class PersistentStorage {
     currentBalance: number,
     startingBalance: number
   ): void {
+    if (this.isProductionStorage) {
+      this.assertIsolatedTestStorage('restoreTestSnapshot');
+    }
     this.inMemoryTrades = [...trades];
     this.inMemoryOutcomes = [...outcomes];
     this.inMemoryCurrentBalance = currentBalance;
@@ -254,7 +343,7 @@ export class PersistentStorage {
   }
 
   private shouldPersist(): boolean {
-    return !this.isTesting;
+    return !this.isTesting && this.isProductionStorage;
   }
 
   public async waitUntilReady(): Promise<void> {
@@ -1263,7 +1352,7 @@ export class PersistentStorage {
   // =========================================================================
   public saveTrade(trade: TradeLedgerItem): TradeLedgerItem[] {
     try {
-      const isTest = isSyntheticTestRecord(trade) || this.isTesting;
+      const isTest = this.isProductionStorage && (isSyntheticTestRecord(trade) || this.isTesting);
       const isResultOpen = trade.result === 'OPEN';
       const targetList = isTest ? this.inMemoryTestTrades : this.inMemoryTrades;
       const highestNum = Math.max(0, ...targetList.map((t) => t.tradeNumber || 0));
@@ -1320,7 +1409,7 @@ export class PersistentStorage {
 
   public async saveTradeAsync(trade: TradeLedgerItem): Promise<TradeLedgerItem[]> {
     try {
-      const isTest = isSyntheticTestRecord(trade) || this.isTesting;
+      const isTest = this.isProductionStorage && (isSyntheticTestRecord(trade) || this.isTesting);
       const isResultOpen = trade.result === 'OPEN';
       const targetList = isTest ? this.inMemoryTestTrades : this.inMemoryTrades;
       const highestNum = Math.max(0, ...targetList.map((t) => t.tradeNumber || 0));
@@ -1393,6 +1482,9 @@ export class PersistentStorage {
   }
 
   public getTradeLedger(limit = 100): TradeLedgerItem[] {
+    if (!this.isProductionStorage) {
+      return [...this.inMemoryTrades, ...this.inMemoryTestTrades].slice(0, limit);
+    }
     return this.inMemoryTrades.filter((t) => !isSyntheticTestRecord(t)).slice(0, limit);
   }
 
@@ -1443,7 +1535,8 @@ export class PersistentStorage {
   } {
     try {
       const existing = this.getTradeOutcome(record.signalId) || (record.tradeId ? this.getTradeOutcome(record.tradeId) : undefined);
-      const existingTrade = this.inMemoryTrades.find(
+      const allTrades = [...this.inMemoryTrades, ...this.inMemoryTestTrades];
+      const existingTrade = allTrades.find(
         (t) => t.id === record.signalId || t.id === record.tradeId || (record.signalId && t.signalId === record.signalId)
       );
 
@@ -1684,7 +1777,7 @@ export class PersistentStorage {
 
       // Dispatch completed trade outcome notification with canonical ID and explicit event timestamp
       const outcomeNotificationId = `close_${record.tradeId || record.signalId}`;
-      telegramService.sendOutcomeNotification(record, updatedTrade, {
+      this.telegramNotifier.sendOutcomeNotification(record, updatedTrade, {
         notificationId: outcomeNotificationId,
         eventTimestamp: record.timestamp || Date.now(),
       }).catch((err) => {
@@ -1765,26 +1858,71 @@ export class PersistentStorage {
         }
       }
 
-      // 2. Locate referenced trade in ledger
-      let tradeToUpdate = this.inMemoryTrades.find((t) =>
-        t.id === params.signalOrTradeId ||
-        (params.positionTicket && (t.id === `mt5_${params.positionTicket}` || t.notes?.includes(String(params.positionTicket)))) ||
-        (params.brokerOrderId && (t.id === `mt5_${params.brokerOrderId}` || t.notes?.includes(String(params.brokerOrderId)))) ||
-        (t.notes && t.notes.includes(`Deal #${params.brokerDealId}`))
-      );
+      // 2. Locate referenced trade in ledger with unambiguous identity
+      const allTrades = [...this.inMemoryTrades, ...this.inMemoryTestTrades];
+      let tradeToUpdate = allTrades.find((t) => {
+        if (params.signalOrTradeId && (t.id === params.signalOrTradeId || t.signalId === params.signalOrTradeId)) return true;
+        if (params.positionTicket) {
+          if (t.id === `mt5_${params.positionTicket}` || t.brokerPositionTicket === params.positionTicket) return true;
+          if (t.notes && new RegExp(`\\b(Ticket|Position)\\s*#?\\s*${params.positionTicket}\\b`).test(t.notes)) return true;
+        }
+        if (params.brokerOrderId) {
+          if (t.id === `mt5_${params.brokerOrderId}` || t.brokerOrderId === params.brokerOrderId) return true;
+          if (t.notes && new RegExp(`\\b(Order|Ticket)\\s*#?\\s*${params.brokerOrderId}\\b`).test(t.notes)) return true;
+        }
+        if (params.brokerDealId && t.notes && new RegExp(`\\bDeal\\s*#?\\s*${params.brokerDealId}\\b`).test(t.notes)) return true;
+        return false;
+      });
 
       const outcome: 'WIN' | 'LOSS' = params.realizedPnl >= 0 ? 'WIN' : 'LOSS';
+      let deltaPnl = params.realizedPnl;
 
       if (tradeToUpdate) {
-        tradeToUpdate.result = outcome;
-        tradeToUpdate.pl = params.realizedPnl;
+        // If trade was already closed (e.g. interim close from MT5 CLOSE command or prior partial deal), handle accounting accordingly
+        const wasClosed = tradeToUpdate.result !== 'OPEN';
+        let updatedPnl = params.realizedPnl;
+        if (wasClosed) {
+          if (tradeToUpdate.isInterimClose) {
+            // Correcting interim price-based estimate from CLOSE command with authoritative broker deal
+            const priorPnl = Number(tradeToUpdate.pl || 0);
+            deltaPnl = Number((params.realizedPnl - priorPnl).toFixed(2));
+            updatedPnl = params.realizedPnl;
+          } else if (tradeToUpdate.isAuthoritative) {
+            // Additional authoritative partial-close deal for the same position
+            deltaPnl = params.realizedPnl;
+            updatedPnl = Number((Number(tradeToUpdate.pl || 0) + params.realizedPnl).toFixed(2));
+          } else {
+            const priorPnl = Number(tradeToUpdate.pl || 0);
+            deltaPnl = Number((params.realizedPnl - priorPnl).toFixed(2));
+            updatedPnl = params.realizedPnl;
+          }
+        }
+
+        const finalOutcome: 'WIN' | 'LOSS' = updatedPnl >= 0 ? 'WIN' : 'LOSS';
+        tradeToUpdate.result = finalOutcome;
+        tradeToUpdate.pl = updatedPnl;
+        tradeToUpdate.realizedPnl = updatedPnl;
         tradeToUpdate.exitPrice = params.exitPrice;
         tradeToUpdate.isActive = false;
+        tradeToUpdate.isAuthoritative = true;
+        tradeToUpdate.isInterimClose = false;
         tradeToUpdate.closeReason = params.closeReason || 'MT5_CLOSED';
-        tradeToUpdate.notes = (tradeToUpdate.notes ? `${tradeToUpdate.notes} | ` : '') + `Closed via Deal #${params.brokerDealId} (PnL: $${params.realizedPnl.toFixed(2)})`;
+        tradeToUpdate.source = 'MT5' as any;
+        if (params.brokerDealId) tradeToUpdate.brokerDealId = params.brokerDealId;
+        if (params.brokerOrderId) tradeToUpdate.brokerOrderId = params.brokerOrderId;
+        if (params.positionTicket) tradeToUpdate.brokerPositionTicket = params.positionTicket;
+        if (params.brokerDealId) {
+          const dealNum = Number(params.brokerDealId);
+          if (!isNaN(dealNum)) {
+            tradeToUpdate.dealTickets = Array.from(new Set([...(tradeToUpdate.dealTickets || []), dealNum]));
+          }
+        }
+        tradeToUpdate.notes = (tradeToUpdate.notes ? `${tradeToUpdate.notes} | ` : '') +
+          `Authoritative MT5 Deal #${params.brokerDealId} (Net PnL: $${params.realizedPnl.toFixed(2)}${params.commission ? `, Comm: $${params.commission}` : ''}${params.swap ? `, Swap: $${params.swap}` : ''})`;
       } else {
         // Instantiate missing trade in ledger (e.g. executed before restart or directly on MT5 demo)
-        const highestNum = Math.max(0, ...this.inMemoryTrades.map((t) => t.tradeNumber || 0));
+        const targetList = this.isIsolatedTest ? this.inMemoryTestTrades : this.inMemoryTrades;
+        const highestNum = Math.max(0, ...targetList.map((t) => t.tradeNumber || 0));
         const entryPrice = params.entryPrice || params.exitPrice;
         tradeToUpdate = {
           id: params.signalOrTradeId || `mt5_${params.brokerDealId}`,
@@ -1804,6 +1942,8 @@ export class PersistentStorage {
           slPoints: 0,
           tp1: 0,
           tp1Points: 0,
+          tp2: 0,
+          tp2Points: 0,
           lotSize: params.lotSize || 0.01,
           riskPercent: 1.5,
           riskAmount: 1.5,
@@ -1812,17 +1952,24 @@ export class PersistentStorage {
           rr: '1:1.5',
           result: outcome,
           pl: params.realizedPnl,
+          realizedPnl: params.realizedPnl,
           exitPrice: params.exitPrice,
           balanceAfterTrade: Number(((this.inMemoryCurrentBalance || 25) + params.realizedPnl).toFixed(2)),
           isActive: false,
+          isAuthoritative: true,
+          isInterimClose: false,
           source: 'MT5' as any,
+          brokerDealId: params.brokerDealId,
+          brokerOrderId: params.brokerOrderId,
+          brokerPositionTicket: params.positionTicket,
           notes: `Reconciled from MT5 Deal #${params.brokerDealId}`,
         };
-        this.inMemoryTrades.unshift(tradeToUpdate);
+        targetList.unshift(tradeToUpdate);
+        deltaPnl = params.realizedPnl;
       }
 
-      // 3. Update Balance
-      this.inMemoryCurrentBalance = Number(((this.inMemoryCurrentBalance || 25) + params.realizedPnl).toFixed(2));
+      // 3. Update Balance with delta (zero double counting!)
+      this.inMemoryCurrentBalance = Number(((this.inMemoryCurrentBalance || 25) + deltaPnl).toFixed(2));
       tradeToUpdate.balanceAfterTrade = this.inMemoryCurrentBalance;
 
       // 4. Record Trade Outcome Record
@@ -2240,7 +2387,7 @@ export class PersistentStorage {
           };
 
           const closeNotificationId = `close_${trade.id}`;
-          telegramService.sendOutcomeNotification(outcomeRecord, targetList[idx], {
+          this.telegramNotifier.sendOutcomeNotification(outcomeRecord, targetList[idx], {
             notificationId: closeNotificationId,
             eventTimestamp: outcomeRecord.timestamp,
           }).catch((err) => {
@@ -2567,7 +2714,16 @@ export class PersistentStorage {
   }
 
   public async clearAllTrades(): Promise<TradeLedgerItem[]> {
+    if (this.isProductionStorage) {
+      this.assertIsolatedTestStorage('clearAllTrades');
+    }
     this.inMemoryTrades = [];
+    this.inMemoryTestTrades = [];
+    this.inMemoryOutcomes = [];
+    this.inMemoryFactorSnapshots.clear();
+    this.inMemoryTestFactorSnapshots.clear();
+    this.inMemoryTelegramDispatches.clear();
+    this.inMemoryExperienceRecords = [];
     this.inMemoryCurrentBalance = this.inMemoryStartingBalance;
     await this.safeSupabaseAsync((c) => c.from('trade_ledger').delete().neq('id', '___non_existent___'), 'clearAllTrades:ledger');
     await this.safeSupabaseAsync(
@@ -2585,11 +2741,17 @@ export class PersistentStorage {
   }
 
   public clearOpportunities(): void {
+    if (this.isProductionStorage) {
+      this.assertIsolatedTestStorage('clearOpportunities');
+    }
     this.inMemoryOpportunities.clear();
     this.syncJsonBackups();
   }
 
   public async resetTradingState(): Promise<any> {
+    if (this.isProductionStorage) {
+      this.assertIsolatedTestStorage('resetTradingState');
+    }
     try {
       const auditBefore = {
         signalsCount: this.inMemorySignals.length,
@@ -2690,6 +2852,13 @@ export class PersistentStorage {
   public getFactorSnapshot(signalId: string): any | null {
     if (!signalId) return null;
     return this.inMemoryFactorSnapshots.get(signalId) || this.inMemoryTestFactorSnapshots.get(signalId) || null;
+  }
+
+  public getFactorSnapshots(): Record<string, any> {
+    return {
+      ...Object.fromEntries(this.inMemoryFactorSnapshots),
+      ...Object.fromEntries(this.inMemoryTestFactorSnapshots),
+    };
   }
 
   public saveExperienceRecord(record: any): void {

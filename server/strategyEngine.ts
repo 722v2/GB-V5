@@ -141,8 +141,8 @@ export function extractSessionExtremes(candles: Candle[]): {
  * confluenceScore * (tp1Rr >= 2.0 ? 1.1 : 1.0)
  */
 export function computeCandidateQualityScore(candidate: SetupCandidate): number {
-  const confluence = typeof candidate.score === 'number' ? candidate.score : 0;
-  const rrMultiplier = (candidate.tp1Rr ?? 0) >= 2.0 ? 1.1 : 1.0;
+  const confluence = typeof candidate.score === 'number' && Number.isFinite(candidate.score) ? candidate.score : 0;
+  const rrMultiplier = typeof candidate.tp1Rr === 'number' && Number.isFinite(candidate.tp1Rr) && candidate.tp1Rr >= 2.0 ? 1.1 : 1.0;
   return confluence * rrMultiplier;
 }
 

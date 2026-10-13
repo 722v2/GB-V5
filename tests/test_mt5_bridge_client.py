@@ -167,5 +167,145 @@ class TestHistoricalCandleSync(unittest.TestCase):
         self.assertEqual(batch_3_len, 200)
         self.assertTrue(self.client.candles_synced)
 
+class TestLiveExecutionSafety(unittest.TestCase):
+    def setUp(self):
+        self.client = WindowsMT5BridgeClient()
+        self.client.is_terminal_connected = True
+        self.client.resolved_symbol = "XAUUSD.m"
+        self.client.session = MagicMock()
+        self.client.report_result = MagicMock()
+        mock_mt5.reset_mock()
+        mock_mt5.ACCOUNT_TRADE_MODE_DEMO = 0
+        mock_mt5.ACCOUNT_TRADE_MODE_REAL = 2
+        mock_mt5.ORDER_TYPE_BUY = 0
+        mock_mt5.ORDER_TYPE_SELL = 1
+        mock_mt5.TRADE_ACTION_DEAL = 1
+        mock_mt5.ORDER_TIME_GTC = 0
+        mock_mt5.ORDER_FILLING_IOC = 1
+        mock_mt5.TRADE_RETCODE_DONE = 10009
+        mock_mt5.symbol_select.return_value = True
+
+        mock_tick = MagicMock()
+        mock_tick.ask = 2500.0
+        mock_tick.bid = 2499.5
+        mock_mt5.symbol_info_tick.return_value = mock_tick
+
+        mock_order_result = MagicMock()
+        mock_order_result.retcode = 10009
+        mock_order_result.order = 123456
+        mock_order_result.deal = 654321
+        mock_order_result.price = 2500.0
+        mock_mt5.order_send.return_value = mock_order_result
+
+        # Save env
+        self.orig_env = dict(os.environ)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.orig_env)
+
+    def test_live_command_rejected_when_live_disabled(self):
+        """LIVE execution command must be rejected fail-closed if MT5_LIVE_EXECUTION_ENABLED is not set."""
+        if "MT5_LIVE_EXECUTION_ENABLED" in os.environ:
+            del os.environ["MT5_LIVE_EXECUTION_ENABLED"]
+
+        mock_acc = MagicMock()
+        mock_acc.trade_mode = 2  # REAL
+        mock_mt5.account_info.return_value = mock_acc
+
+        cmd = {
+            "commandId": "cmd_test_live_1",
+            "action": "BUY",
+            "volume": 0.01,
+            "price": 2500.0,
+            "sl": 2490.0,
+            "tp": 2515.0,
+            "accountMode": "LIVE",
+        }
+
+        self.client.execute_command(cmd)
+
+        self.client.report_result.assert_called_once()
+        args, kwargs = self.client.report_result.call_args
+        self.assertEqual(kwargs.get("status"), "REJECTED")
+        self.assertIn("LIVE/REAL execution blocked", kwargs.get("message", ""))
+        mock_mt5.order_send.assert_not_called()
+
+    def test_live_command_rejected_on_demo_account_even_if_configured(self):
+        """LIVE command must be rejected if account is DEMO even if MT5_LIVE_EXECUTION_ENABLED is true."""
+        os.environ["MT5_LIVE_EXECUTION_ENABLED"] = "true"
+
+        mock_acc = MagicMock()
+        mock_acc.trade_mode = 0  # DEMO
+        mock_mt5.account_info.return_value = mock_acc
+
+        cmd = {
+            "commandId": "cmd_test_live_2",
+            "action": "BUY",
+            "volume": 0.01,
+            "price": 2500.0,
+            "sl": 2490.0,
+            "tp": 2515.0,
+            "accountMode": "LIVE",
+        }
+
+        self.client.execute_command(cmd)
+
+        self.client.report_result.assert_called_once()
+        args, kwargs = self.client.report_result.call_args
+        self.assertEqual(kwargs.get("status"), "REJECTED")
+        self.assertIn("Account mismatch", kwargs.get("message", ""))
+        mock_mt5.order_send.assert_not_called()
+
+    def test_live_command_accepted_when_live_configured_on_real_account(self):
+        """LIVE command must succeed when configured AND terminal is verified REAL account."""
+        os.environ["MT5_LIVE_EXECUTION_ENABLED"] = "true"
+
+        mock_acc = MagicMock()
+        mock_acc.trade_mode = 2  # REAL
+        mock_mt5.account_info.return_value = mock_acc
+        mock_mt5.order_check.return_value = MagicMock(retcode=0)
+
+        cmd = {
+            "commandId": "cmd_test_live_3",
+            "action": "BUY",
+            "volume": 0.01,
+            "price": 2500.0,
+            "sl": 2490.0,
+            "tp": 2515.0,
+            "accountMode": "LIVE",
+        }
+
+        self.client.execute_command(cmd)
+
+        mock_mt5.order_send.assert_called()
+        self.client.report_result.assert_called_once()
+        args, kwargs = self.client.report_result.call_args
+        self.assertEqual(kwargs.get("status"), "FILLED")
+
+    def test_unsupported_trade_mode_rejected(self):
+        """Unsupported trade_mode (e.g. 99) must fail closed."""
+        mock_acc = MagicMock()
+        mock_acc.trade_mode = 99  # Invalid
+        mock_mt5.account_info.return_value = mock_acc
+
+        cmd = {
+            "commandId": "cmd_test_live_4",
+            "action": "BUY",
+            "volume": 0.01,
+            "price": 2500.0,
+            "sl": 2490.0,
+            "tp": 2515.0,
+            "accountMode": "DEMO",
+        }
+
+        self.client.execute_command(cmd)
+
+        self.client.report_result.assert_called_once()
+        args, kwargs = self.client.report_result.call_args
+        self.assertEqual(kwargs.get("status"), "REJECTED")
+        self.assertIn("Unverified or unsupported", kwargs.get("message", ""))
+        mock_mt5.order_send.assert_not_called()
+
 if __name__ == "__main__":
     unittest.main()

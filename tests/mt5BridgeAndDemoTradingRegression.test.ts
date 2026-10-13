@@ -1,15 +1,15 @@
 import assert from 'assert';
-import { mt5Bridge } from '../server/mt5Bridge.js';
-import { storage } from '../server/storage.js';
+import { MT5BridgeService } from '../server/mt5Bridge.js';
+import { storage, PersistentStorage } from '../server/storage.js';
 import { fetchHistoricalBacktestDataset } from '../server/marketData.js';
 import { Candle } from '../src/types.js';
 
-function createCandles(count: number, basePrice: number): Candle[] {
+function createCandles(count: number, basePrice: number, stepMinutes: number = 1): Candle[] {
   const candles: Candle[] = [];
-  const baseTime = Date.now() - count * 60000;
+  const baseTime = Date.now() - count * stepMinutes * 60000;
   for (let i = 0; i < count; i++) {
     candles.push({
-      timestamp: baseTime + i * 60000,
+      timestamp: baseTime + i * stepMinutes * 60000,
       open: basePrice + i * 0.1,
       high: basePrice + i * 0.1 + 0.5,
       low: basePrice + i * 0.1 - 0.5,
@@ -27,12 +27,12 @@ async function runMT5BridgeRegressionTests() {
   console.log('========================================================================\n');
 
   await storage.waitUntilReady();
-  const wasTesting = storage.isTestingMode();
-  const initialTradesSnapshot = [...storage.getTrades(500)];
-  const initialOutcomesSnapshot = [...storage.getTradeOutcomes(500)];
-  const initialBalanceSnapshot = storage.getCurrentBalance();
-  const initialStartingBalanceSnapshot = storage.getStartingBalance();
-  storage.setTestingMode(true);
+  const prodTradesBefore = storage.getTrades().length;
+  const prodOutcomesBefore = storage.getTradeOutcomes().length;
+  const prodBalanceBefore = storage.getCurrentBalance();
+
+  const mt5Bridge = new MT5BridgeService({ isIsolatedTest: true });
+  const testStorage = PersistentStorage.createIsolatedTestInstance(100.0);
 
   try {
     // TEST 1: Disconnected state by default
@@ -90,7 +90,20 @@ async function runMT5BridgeRegressionTests() {
 
   // TEST 2C: LIVE mode requires explicit authorization before order execution
   console.log('TEST 2C: LIVE mode requires explicit user authorization before order execution');
-  mt5Bridge.setExecutionMode('LIVE');
+  
+  // 2C.1: Fail closed when MT5_LIVE_EXECUTION_ENABLED is not configured
+  const origLiveConfig = process.env.MT5_LIVE_EXECUTION_ENABLED;
+  delete process.env.MT5_LIVE_EXECUTION_ENABLED;
+  const unconfiguredModeRes = mt5Bridge.setExecutionMode('LIVE');
+  assert.strictEqual(unconfiguredModeRes.success, false, 'Setting LIVE mode must fail closed when unconfigured');
+  const unconfiguredAuthRes = mt5Bridge.authorizeLiveTrading();
+  assert.strictEqual(unconfiguredAuthRes.success, false, 'LIVE authorization must fail closed when unconfigured');
+  assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'LIVE auto-trading must be inactive when unconfigured');
+
+  // 2C.2: When configured, requires explicit user authorization before order execution
+  process.env.MT5_LIVE_EXECUTION_ENABLED = 'true';
+  const configuredModeRes = mt5Bridge.setExecutionMode('LIVE');
+  assert.strictEqual(configuredModeRes.success, true, 'Setting LIVE mode must succeed when configured');
   assert.strictEqual(mt5Bridge.isDemoAutoTradingActive(), false, 'LIVE auto-trading must be inactive before explicit authorization');
   
   const liveOrderUnauthorized = mt5Bridge.queueDemoOrder({
@@ -220,6 +233,11 @@ async function runMT5BridgeRegressionTests() {
     tp: 2510,
   });
   assert.strictEqual(revokedOrder.success, false, 'Order queue must be rejected after LIVE authorization revocation');
+  if (origLiveConfig !== undefined) {
+    process.env.MT5_LIVE_EXECUTION_ENABLED = origLiveConfig;
+  } else {
+    delete process.env.MT5_LIVE_EXECUTION_ENABLED;
+  }
   console.log('✅ [PASS] TEST 2F: Account identity change revokes LIVE authorization.\n');
 
   // TEST 2G: Sensitive Web API Authentication Enforcement
@@ -249,17 +267,21 @@ async function runMT5BridgeRegressionTests() {
     nextCalled = false;
 
     const configuredKey = (process.env.ADMIN_API_KEY || '').trim();
-    if (configuredKey) {
-      const authHeader = reqHeaders.authorization || '';
-      const token = authHeader.startsWith('Bearer ')
-        ? authHeader.slice(7).trim()
-        : (reqHeaders['x-admin-key'] || reqHeaders['x-api-key'] || authHeader).trim();
+    if (!configuredKey || configuredKey === 'your_secure_random_bridge_token_here' || configuredKey.length < 8) {
+      statusCode = 503;
+      responseData = { success: false, error: 'Service Unavailable: Admin authentication is unavailable' };
+      return;
+    }
 
-      if (!token || token !== configuredKey) {
-        statusCode = 401;
-        responseData = { success: false, error: 'Unauthorized: Admin authentication token required' };
-        return;
-      }
+    const authHeader = reqHeaders.authorization || '';
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7).trim()
+      : (reqHeaders['x-admin-key'] || reqHeaders['x-api-key'] || authHeader).trim();
+
+    if (!token || token !== configuredKey) {
+      statusCode = 401;
+      responseData = { success: false, error: 'Unauthorized: Admin authentication token required' };
+      return;
     }
     nextFn();
   };
@@ -450,10 +472,11 @@ async function runMT5BridgeRegressionTests() {
 
   // TEST 11: Historical candles extraction and caching for backtesting
   console.log('TEST 11: Historical candles storage and retrieval across timeframes');
-  const m1Candles = createCandles(100, 2500);
-  const m5Candles = createCandles(50, 2500);
-  const m15Candles = createCandles(40, 2500);
-  const h1Candles = createCandles(30, 2500);
+  mt5Bridge.clearCandleCache();
+  const m1Candles = createCandles(300, 2500, 1);
+  const m5Candles = createCandles(300, 2500, 5);
+  const m15Candles = createCandles(100, 2500, 15);
+  const h1Candles = createCandles(30, 2500, 60);
 
   mt5Bridge.storeHistoricalCandles('M1', m1Candles);
   mt5Bridge.storeHistoricalCandles('M5', m5Candles);
@@ -466,7 +489,7 @@ async function runMT5BridgeRegressionTests() {
   assert.strictEqual(mt5Bridge.hasHistoricalCandles('H1'), true, 'Should have H1 candles');
 
   const retrievedM5 = mt5Bridge.getHistoricalCandles('M5');
-  assert.strictEqual(retrievedM5?.length, 50, 'Retrieved M5 candles length must match stored');
+  assert.strictEqual(retrievedM5?.length, 300, 'Retrieved M5 candles length must match stored');
   console.log('✅ [PASS] TEST 11: Historical candles cached and accessible for backtesting.\n');
 
   // TEST 12: Broker symbol specifications validation, transmission, mapping, and fail-closed defense
@@ -509,8 +532,8 @@ async function runMT5BridgeRegressionTests() {
 
   // TEST 13: Deal history reconciliation with the persistent trade ledger and realized PnL
   console.log('TEST 13: Deal history reconciliation, realized PnL, idempotency, and ledger persistence');
-  const initialBalance = storage.getSettings().manualCapital;
-  const initialTradesCount = storage.getTrades().length;
+  const initialBalance = testStorage.getSettings().manualCapital;
+  const initialTradesCount = testStorage.getTrades().length;
 
   const deal1 = {
     ticket: 990011,
@@ -529,25 +552,25 @@ async function runMT5BridgeRegressionTests() {
     comment: 'TP1 Hit Close',
   };
 
-  const dealReportRes = mt5Bridge.handleDealsReport([deal1]);
+  const dealReportRes = mt5Bridge.handleDealsReport([deal1], testStorage);
   assert.strictEqual(dealReportRes.success, true, 'Deals report must succeed');
   assert.strictEqual(dealReportRes.processedCount, 1, 'One deal must be processed');
   assert.strictEqual(dealReportRes.duplicateCount, 0, 'No duplicates on initial report');
 
   // Verify trade in ledger
-  const updatedTrades = storage.getTrades(500);
+  const updatedTrades = testStorage.getTrades(500);
   const recordedTrade = updatedTrades.find((t) => t.id === 'mt5_770011' || t.notes?.includes('990011'));
   assert(recordedTrade !== undefined, 'Recorded trade must be present in ledger');
   assert.strictEqual(recordedTrade?.result, 'WIN', 'Outcome must be WIN for positive PnL');
   assert.strictEqual(recordedTrade?.pl, 24.90, 'Realized PnL must account for profit + commission + swap ($24.90)');
 
   // Verify outcome record
-  const outcomeRec = storage.getTradeOutcome(recordedTrade!.id) || storage.getTradeOutcome(recordedTrade!.signalId || '');
+  const outcomeRec = testStorage.getTradeOutcome(recordedTrade!.id) || testStorage.getTradeOutcome(recordedTrade!.signalId || '');
   assert(outcomeRec !== undefined, 'Outcome record must exist in storage');
   assert.strictEqual(outcomeRec?.brokerDealId, '990011', 'Broker deal ticket must match');
 
   // Verify idempotency: re-reporting deal1 must not re-process or double-count PnL
-  const duplicateDealReportRes = mt5Bridge.handleDealsReport([deal1]);
+  const duplicateDealReportRes = mt5Bridge.handleDealsReport([deal1], testStorage);
   assert.strictEqual(duplicateDealReportRes.processedCount, 0, 'Re-reported deal must not be re-processed');
   assert.strictEqual(duplicateDealReportRes.duplicateCount, 1, 'Re-reported deal must be flagged as duplicate');
   console.log('✅ [PASS] TEST 13: Deal reconciliation and idempotency verified.\n');
@@ -586,7 +609,7 @@ async function runMT5BridgeRegressionTests() {
     timeRange: '1D',
     requestedStartTime: Date.now() - 24 * 3600 * 1000,
     requestedEndTime: Date.now(),
-  });
+  }, mt5Bridge);
   assert.strictEqual(datasetResult.provider, 'MT5_BRIDGE', 'Provider should be MT5_BRIDGE');
   assert(Array.isArray(datasetResult.candles1m), 'candles1m array must be present');
   assert(datasetResult.candles1m!.length >= 30, 'candles1m must contain historical M1 candles');
@@ -599,13 +622,9 @@ async function runMT5BridgeRegressionTests() {
     console.log('🎉 ALL 15 MT5 BRIDGE & DEMO AUTO-TRADING REGRESSION TESTS PASSED (15/15)!');
     console.log('========================================================================');
   } finally {
-    storage.restoreTestSnapshot(
-      initialTradesSnapshot,
-      initialOutcomesSnapshot,
-      initialBalanceSnapshot,
-      initialStartingBalanceSnapshot
-    );
-    storage.setTestingMode(wasTesting);
+    assert.strictEqual(storage.getTrades().length, prodTradesBefore, 'Production trades count must be untouched');
+    assert.strictEqual(storage.getTradeOutcomes().length, prodOutcomesBefore, 'Production outcomes count must be untouched');
+    assert.strictEqual(storage.getCurrentBalance(), prodBalanceBefore, 'Production balance must be untouched');
   }
 }
 

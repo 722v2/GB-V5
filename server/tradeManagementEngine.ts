@@ -9,7 +9,7 @@ import {
   AppSettings,
   DEFAULT_APP_SETTINGS,
 } from '../src/types.js';
-import { storage } from './storage.js';
+import { storage, PersistentStorage, ITelegramNotifier, LiveTelegramNotifier } from './storage.js';
 import { generateMultiStrategyCandidates, SetupCandidate } from './strategyEngine.js';
 import { BrokerContractSpecs, DEFAULT_BROKER_SPECS, evaluateTradeRisk } from './riskManager.js';
 import { telegramService } from './telegram.js';
@@ -163,8 +163,10 @@ export class TradeManagementEngine {
     ind15m: TechnicalIndicators,
     ind5m: TechnicalIndicators,
     activeCapital: number,
-    settings: AppSettings = DEFAULT_APP_SETTINGS
+    settings: AppSettings = DEFAULT_APP_SETTINGS,
+    customStorage?: PersistentStorage
   ): Promise<TradeManagementEvaluationResult> {
+    const activeStorage = customStorage || storage;
     const isBuy = trade.direction.toUpperCase().includes('BUY');
     const direction: 'BUY' | 'SELL' = isBuy ? 'BUY' : 'SELL';
     let entry = Number(trade.entry !== undefined ? trade.entry : (trade as any).entryPrice);
@@ -176,7 +178,7 @@ export class TradeManagementEngine {
 
     // P1-7: Attempt to resolve missing TP/SL from original signal in storage
     if (!entry || isNaN(entry) || !sl || isNaN(sl) || !tp1 || isNaN(tp1)) {
-      const origSignal = storage.getSignal(trade.id) || (trade.signalId ? storage.getSignal(trade.signalId) : null);
+      const origSignal = activeStorage.getSignal(trade.id) || (trade.signalId ? activeStorage.getSignal(trade.signalId) : null);
       if (origSignal) {
         if (!entry || isNaN(entry)) entry = Number(origSignal.entry);
         if (!sl || isNaN(sl)) sl = Number(origSignal.stopLoss);
@@ -359,11 +361,11 @@ export class TradeManagementEngine {
         );
         trade.managementState = 'CLOSED';
         trade.isActive = false;
-        storage.closeTrade(trade.id, resultType, realizedPl, exitPrice, noteSuffix);
+        activeStorage.closeTrade(trade.id, resultType, realizedPl, exitPrice, noteSuffix);
         if (resultType === 'LOSS') {
-          globalLifecycleManager.markSetupFailed(trade, 'Trade hit Stop Loss in Unified TradeManagementEngine');
+          globalLifecycleManager.markSetupFailed(trade, 'Trade hit Stop Loss in Unified TradeManagementEngine', activeStorage);
         } else if (resultType === 'WIN') {
-          globalLifecycleManager.markSetupCompleted(trade, 'Trade reached TP2 target in Unified TradeManagementEngine');
+          globalLifecycleManager.markSetupCompleted(trade, 'Trade reached TP2 target in Unified TradeManagementEngine', activeStorage);
         }
         this.totalClosedCount++;
 
@@ -1111,8 +1113,10 @@ export class TradeManagementEngine {
   public async applyManagementDecision(
     evalResult: TradeManagementEvaluationResult,
     trade: TradeLedgerItem,
-    settings: AppSettings
+    settings: AppSettings,
+    customStorage?: PersistentStorage
   ): Promise<void> {
+    const activeStorage = customStorage || storage;
     const { action, safetyPassed, isDuplicateNotification } = evalResult;
 
     if (!safetyPassed) {
@@ -1168,8 +1172,8 @@ export class TradeManagementEngine {
         trade.managementState = 'CLOSED';
         trade.isActive = false;
         trade.result = resultType;
-        storage.closeTrade(trade.id, resultType, realizedPl, exitPrice, noteSuffix);
-        globalLifecycleManager.markSetupFailed(trade, 'Trade closed early due to confirmed structural reversal');
+        activeStorage.closeTrade(trade.id, resultType, realizedPl, exitPrice, noteSuffix);
+        globalLifecycleManager.markSetupFailed(trade, 'Trade closed early due to confirmed structural reversal', activeStorage);
         this.totalClosedCount++;
         needsLedgerSave = false;
       } finally {
@@ -1201,13 +1205,13 @@ export class TradeManagementEngine {
       }
 
       // Dispatch management alert via Telegram asynchronously
-      this.sendManagementNotification(action, trade, evalResult.health).catch((err) => {
+      this.sendManagementNotification(action, trade, evalResult.health, activeStorage.getTelegramNotifier()).catch((err) => {
         console.error(`[TradeManagementEngine] Telegram dispatch error for trade ${trade.id}:`, err);
       });
     }
 
     if (needsLedgerSave) {
-      storage.saveTrade(trade);
+      activeStorage.saveTrade(trade);
     }
   }
 
@@ -1217,7 +1221,8 @@ export class TradeManagementEngine {
   public async sendManagementNotification(
     action: ManagementAction,
     trade: TradeLedgerItem,
-    health?: TradeHealthMetrics
+    health?: TradeHealthMetrics,
+    customNotifier?: ITelegramNotifier
   ): Promise<boolean> {
     const isBuy = action.direction === 'BUY';
     const dirEmoji = isBuy ? '🟢' : '🔴';
@@ -1458,7 +1463,8 @@ ${bodyText}
       ? `early_exit_${trade.id}`
       : `mgmt_${actionKey}_${trade.id}`;
 
-    telegramService.sendManagementNotification(formattedMessage, {
+    const notifier = customNotifier || new LiveTelegramNotifier();
+    notifier.sendManagementNotification(formattedMessage, {
       notificationId,
       tradeId: trade.id,
       event: action.actionType,
@@ -1568,6 +1574,8 @@ ${bodyText}
    */
   public clearNotificationCache(): void {
     this.lastNotificationCache.clear();
+    this.tradeLastNotifiedState.clear();
+    this.tradeLastNotifiedLevel.clear();
   }
 }
 

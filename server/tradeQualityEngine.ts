@@ -19,7 +19,7 @@ import {
   StrategyFamily,
   TradeSignal,
 } from '../src/types.js';
-import { storage } from './storage.js';
+import { storage, PersistentStorage } from './storage.js';
 import { extractPriceActionEvidence } from './evidenceEngine.js';
 import { assessEntryLocationQuality } from './entryLocationQuality.js';
 
@@ -323,7 +323,7 @@ export function assessPriceActionTrigger(
 
   const allTriggers: PriceActionTriggerType[] = [];
   let hasHardPriceActionTrigger = false;
-  let primaryTrigger: PriceActionTriggerType = 'NONE';
+  let primaryTrigger: PriceActionTriggerType | null = null;
   let score = 0;
   let description = 'No price action trigger detected';
 
@@ -411,7 +411,7 @@ export function assessPriceActionTrigger(
     hasHardPriceActionTrigger,
     priceActionScore: score,
     primaryTrigger,
-    allTriggers: allTriggers.length > 0 ? allTriggers : ['NONE'],
+    allTriggers: allTriggers,
     triggerTimeframe: '5M',
     confirmationScore: score,
     description,
@@ -532,9 +532,10 @@ export class CandidateLifecycleManager {
     return this.lifecycles.get(id);
   }
 
-  public markSetupCompleted(target: any, details?: any): void {
+  public markSetupCompleted(target: any, details?: any, targetStorage?: PersistentStorage): void {
     const key = this.resolveKey(target);
     if (!key) return;
+    const activeStorage = targetStorage || storage;
     const record: CandidateLifecycleRecord = this.lifecycles.get(key) || {
       id: key,
       setupName: target?.setup || 'Setup',
@@ -554,21 +555,22 @@ export class CandidateLifecycleManager {
     record.lastUpdatedTime = Date.now();
     this.lifecycles.set(key, record);
     try {
-      storage.saveCandidateLifecycle(record);
-      storage.saveTerminalSetup(key);
-      storage.saveTerminalSetup(`cand_${key}`);
+      activeStorage.saveCandidateLifecycle(record);
+      activeStorage.saveTerminalSetup(key);
+      activeStorage.saveTerminalSetup(`cand_${key}`);
       if (target?.patternMetadata?.patternAnchorKey) {
-        storage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
-        storage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
+        activeStorage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
+        activeStorage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
       }
     } catch {
       // Non-blocking
     }
   }
 
-  public markSetupExpired(target: any, reason?: string): void {
+  public markSetupExpired(target: any, reason?: string, targetStorage?: PersistentStorage): void {
     const key = this.resolveKey(target);
     if (!key) return;
+    const activeStorage = targetStorage || storage;
     const record: CandidateLifecycleRecord = this.lifecycles.get(key) || {
       id: key,
       setupName: target?.setup || 'Setup',
@@ -589,21 +591,22 @@ export class CandidateLifecycleManager {
     record.lastUpdatedTime = Date.now();
     this.lifecycles.set(key, record);
     try {
-      storage.saveCandidateLifecycle(record);
-      storage.saveTerminalSetup(key);
-      storage.saveTerminalSetup(`cand_${key}`);
+      activeStorage.saveCandidateLifecycle(record);
+      activeStorage.saveTerminalSetup(key);
+      activeStorage.saveTerminalSetup(`cand_${key}`);
       if (target?.patternMetadata?.patternAnchorKey) {
-        storage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
-        storage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
+        activeStorage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
+        activeStorage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
       }
     } catch {
       // Non-blocking
     }
   }
 
-  public markSetupCancelled(target: any, reason?: string): void {
+  public markSetupCancelled(target: any, reason?: string, targetStorage?: PersistentStorage): void {
     const key = this.resolveKey(target);
     if (!key) return;
+    const activeStorage = targetStorage || storage;
     const record: CandidateLifecycleRecord = this.lifecycles.get(key) || {
       id: key,
       setupName: target?.setup || 'Setup',
@@ -624,21 +627,22 @@ export class CandidateLifecycleManager {
     record.lastUpdatedTime = Date.now();
     this.lifecycles.set(key, record);
     try {
-      storage.saveCandidateLifecycle(record);
-      storage.saveTerminalSetup(key);
-      storage.saveTerminalSetup(`cand_${key}`);
+      activeStorage.saveCandidateLifecycle(record);
+      activeStorage.saveTerminalSetup(key);
+      activeStorage.saveTerminalSetup(`cand_${key}`);
       if (target?.patternMetadata?.patternAnchorKey) {
-        storage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
-        storage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
+        activeStorage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
+        activeStorage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
       }
     } catch {
       // Non-blocking
     }
   }
 
-  public markSetupFailed(target: any, reason?: string): void {
+  public markSetupFailed(target: any, reason?: string, targetStorage?: PersistentStorage): void {
     const key = this.resolveKey(target);
     if (!key) return;
+    const activeStorage = targetStorage || storage;
     const record: CandidateLifecycleRecord = this.lifecycles.get(key) || {
       id: key,
       setupName: target?.setup || 'Setup',
@@ -659,12 +663,12 @@ export class CandidateLifecycleManager {
     record.lastUpdatedTime = Date.now();
     this.lifecycles.set(key, record);
     try {
-      storage.saveCandidateLifecycle(record);
-      storage.saveTerminalSetup(key);
-      storage.saveTerminalSetup(`cand_${key}`);
+      activeStorage.saveCandidateLifecycle(record);
+      activeStorage.saveTerminalSetup(key);
+      activeStorage.saveTerminalSetup(`cand_${key}`);
       if (target?.patternMetadata?.patternAnchorKey) {
-        storage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
-        storage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
+        activeStorage.saveTerminalSetup(target.patternMetadata.patternAnchorKey);
+        activeStorage.saveTerminalSetup(`cand_${target.patternMetadata.patternAnchorKey}`);
       }
     } catch {
       // Non-blocking

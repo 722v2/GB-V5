@@ -319,6 +319,10 @@ export class TelegramService {
     }
   }
 
+  public saveTelegramDispatch(key: string): void {
+    this.safelySaveTelegramDispatch(key);
+  }
+
   private safelyIsTelegramDispatched(key: string): boolean {
     try {
       if (typeof storage !== 'undefined' && storage && typeof storage.isTelegramDispatched === 'function') {
@@ -328,6 +332,14 @@ export class TelegramService {
       // safe guard
     }
     return false;
+  }
+
+  public isTelegramDispatched(key: string): boolean {
+    const item = this.notificationQueue.get(key);
+    if (item && item.status === 'SENT') {
+      return true;
+    }
+    return this.safelyIsTelegramDispatched(key);
   }
 
   /**

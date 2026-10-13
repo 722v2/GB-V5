@@ -573,6 +573,10 @@ export interface TradeLedgerItem {
   source?: 'MANUAL' | 'MT5' | 'SYSTEM';
   brokerDealId?: string;
   brokerOrderId?: string;
+  brokerPositionTicket?: number;
+  isInterimClose?: boolean;
+  isAuthoritative?: boolean;
+  dealTickets?: number[];
   theoreticalTp1Profit?: number;
   theoreticalTp2Profit?: number;
   notes?: string;

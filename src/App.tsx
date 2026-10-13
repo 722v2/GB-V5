@@ -135,20 +135,7 @@ export default function App() {
             const data = await verifyRes.json();
             if (data.authenticated) return;
           }
-        }
-
-        // If no valid stored key, attempt verification with default bridge token key
-        const defaultKey = 'your_secure_random_bridge_token_here';
-        const defaultRes = await fetch('/api/auth/verify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ key: defaultKey }),
-        });
-        if (defaultRes.ok) {
-          const defaultData = await defaultRes.json();
-          if (defaultData.authenticated) {
-            localStorage.setItem('gbv5_admin_key', defaultKey);
-          }
+          localStorage.removeItem('gbv5_admin_key');
         }
       } catch (err) {
         console.warn('Failed to verify admin auth config:', err);

@@ -1,5 +1,34 @@
 [
   {
+    "id": "test-dedup-action",
+    "tradeNumber": 11,
+    "date": "Today",
+    "asset": "XAU/USD",
+    "direction": "BUY NOW",
+    "entry": 4290,
+    "sl": 4285,
+    "tp1": 4300,
+    "tp2": 4310,
+    "rr": "1:2.0",
+    "riskPercent": 15,
+    "riskAmount": 5,
+    "lotSize": 0.01,
+    "confidence": 80,
+    "setup": "Order Block",
+    "result": "LOSS",
+    "isActive": false,
+    "pl": 0,
+    "balanceAfterTrade": 100,
+    "managementState": "CLOSED",
+    "lastManagementAction": "EARLY_EXIT",
+    "lastManagementTimestamp": 1791876671481,
+    "notifiedStates": [
+      "EARLY_EXIT"
+    ],
+    "isoTime": "2026-10-13T07:31:11.482Z",
+    "isTest": true
+  },
+  {
     "id": "test_regression_trade_999",
     "asset": "XAU/USD",
     "direction": "BUY NOW",
