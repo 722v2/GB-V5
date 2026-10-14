@@ -1531,5 +1531,131 @@
     },
     "combinationKey": "direction=BUY|fvg=NONE|htfStructure=UPTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BULLISH|macd=BEARISH|marketRegime=NORMAL_RANGE|orderBlock=BEARISH_OB|rsi=NEUTRAL|setupFamily=MARKET_STRUCTURE|volatility=NORMAL|zone=DISCOUNT",
     "createdAt": 1791888236515
+  },
+  "sig_1791981040745_3lx0m": {
+    "signalId": "sig_1791981040745_3lx0m",
+    "setupFamily": "MARKET_STRUCTURE",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "MARKET_STRUCTURE",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "RANGING",
+      "marketRegime": "NORMAL_RANGE",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BULLISH_OB",
+      "fvg": "NONE",
+      "zone": "EQUILIBRIUM",
+      "rsi": "NEUTRAL",
+      "macd": "BULLISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=RANGING|macd=BULLISH|marketRegime=NORMAL_RANGE|orderBlock=BULLISH_OB|rsi=NEUTRAL|setupFamily=MARKET_STRUCTURE|volatility=HIGH|zone=EQUILIBRIUM",
+    "createdAt": 1791981040745
+  },
+  "sig_1791981160681_ab664": {
+    "signalId": "sig_1791981160681_ab664",
+    "setupFamily": "MARKET_STRUCTURE",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "MARKET_STRUCTURE",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "RANGING",
+      "marketRegime": "NORMAL_RANGE",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BULLISH_OB",
+      "fvg": "NONE",
+      "zone": "EQUILIBRIUM",
+      "rsi": "NEUTRAL",
+      "macd": "BULLISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=RANGING|macd=BULLISH|marketRegime=NORMAL_RANGE|orderBlock=BULLISH_OB|rsi=NEUTRAL|setupFamily=MARKET_STRUCTURE|volatility=HIGH|zone=EQUILIBRIUM",
+    "createdAt": 1791981160681
+  },
+  "sig_1791981280685_i48r7": {
+    "signalId": "sig_1791981280685_i48r7",
+    "setupFamily": "MARKET_STRUCTURE",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "MARKET_STRUCTURE",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "RANGING",
+      "marketRegime": "NORMAL_RANGE",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BULLISH_OB",
+      "fvg": "NONE",
+      "zone": "EQUILIBRIUM",
+      "rsi": "NEUTRAL",
+      "macd": "BULLISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=RANGING|macd=BULLISH|marketRegime=NORMAL_RANGE|orderBlock=BULLISH_OB|rsi=NEUTRAL|setupFamily=MARKET_STRUCTURE|volatility=HIGH|zone=EQUILIBRIUM",
+    "createdAt": 1791981280685
+  },
+  "sig_1791982120682_553gn": {
+    "signalId": "sig_1791982120682_553gn",
+    "setupFamily": "LIQUIDITY_SWEEP",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "LIQUIDITY_SWEEP",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "BEARISH",
+      "marketRegime": "STRONG_TREND",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BEARISH_OB",
+      "fvg": "BULLISH_FVG",
+      "zone": "DISCOUNT",
+      "rsi": "OVERSOLD",
+      "macd": "BEARISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=BULLISH_FVG|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=OVERSOLD|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
+    "createdAt": 1791982120682
+  },
+  "sig_1791982714360_rvumf": {
+    "signalId": "sig_1791982714360_rvumf",
+    "setupFamily": "LIQUIDITY_SWEEP",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "LIQUIDITY_SWEEP",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "BEARISH",
+      "marketRegime": "STRONG_TREND",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BEARISH_OB",
+      "fvg": "BULLISH_FVG",
+      "zone": "DISCOUNT",
+      "rsi": "NEUTRAL",
+      "macd": "BEARISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=BULLISH_FVG|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=NEUTRAL|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
+    "createdAt": 1791982714360
+  },
+  "sig_1791982935341_a68d1": {
+    "signalId": "sig_1791982935341_a68d1",
+    "setupFamily": "LIQUIDITY_SWEEP",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "LIQUIDITY_SWEEP",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "BEARISH",
+      "marketRegime": "STRONG_TREND",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BEARISH_OB",
+      "fvg": "NONE",
+      "zone": "DISCOUNT",
+      "rsi": "OVERSOLD",
+      "macd": "BEARISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=OVERSOLD|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
+    "createdAt": 1791982935341
   }
 }

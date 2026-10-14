@@ -5,6 +5,7 @@ import {
   assessStopLossQuality,
   assessEntryTimingAndAntiChase,
   validateTradeSignalCandidate,
+  checkStructuralSameSetupIdentity,
 } from '../server/tradeQualityEngine.js';
 import { generateMultiStrategyCandidates } from '../server/strategyEngine.js';
 import { Candle, TechnicalIndicators } from '../src/types.js';
@@ -73,7 +74,7 @@ function buildMockIndicators(overrides: Partial<TechnicalIndicators> = {}): Tech
 
 export async function runSignalConfluenceRegressionSuite() {
   console.log('========================================================================');
-  console.log('🎯 RUNNING SIGNAL CONFLUENCE & MARKET STRUCTURE QUALITY SUITE (18 TESTS)');
+  console.log('🎯 RUNNING SIGNAL CONFLUENCE & MARKET STRUCTURE QUALITY SUITE (22 TESTS)');
   console.log('========================================================================');
 
   let passed = 0;
@@ -480,16 +481,16 @@ export async function runSignalConfluenceRegressionSuite() {
     const result = validateTradeSignalCandidate(
       {
         direction: 'BUY',
-        entry: 2637.0,
-        stopLoss: 2629.0, // 80 -> let's make it 50 pts: 2632
-        tp1: 2648.0, // > 1.0R
+        entry: 2631.5,
+        stopLoss: 2627.0,
+        tp1: 2642.0, // > 1.0R
         strategyFamily: 'LIQUIDITY_SWEEP',
         setupName: 'SSL Sweep Reversal at Range Low',
         poiPrice: 2630.0,
         poiMeta: { type: 'SFP_ZONE', bottom: 2629, top: 2631 },
       },
       {
-        currentPrice: 2637.0,
+        currentPrice: 2631.5,
         candles5m,
         candles15m: baseCandles15m,
         candles1h: baseCandles1h,
@@ -522,21 +523,21 @@ export async function runSignalConfluenceRegressionSuite() {
 
     const candles5m = [...baseCandles5m];
     const lastTime = now - 5 * 60 * 1000;
-    candles5m[candles5m.length - 1] = buildMockCandle(lastTime, 2658, 2662, 2652, 2653); // Sweep above 2660 with top wick + close back below
+    candles5m[candles5m.length - 1] = buildMockCandle(lastTime, 2661, 2663, 2658, 2659); // Bearish rejection at resistance
 
     const result = validateTradeSignalCandidate(
       {
         direction: 'SELL',
-        entry: 2653.0,
-        stopLoss: 2661.0, // 80 pts
-        tp1: 2640.0, // > 1.0R
+        entry: 2659.5,
+        stopLoss: 2664.0,
+        tp1: 2648.0, // > 1.0R
         strategyFamily: 'LIQUIDITY_SWEEP',
         setupName: 'BSL Sweep Reversal at Range High',
         poiPrice: 2660.0,
         poiMeta: { type: 'SFP_ZONE', bottom: 2659, top: 2661 },
       },
       {
-        currentPrice: 2653.0,
+        currentPrice: 2659.5,
         candles5m,
         candles15m: baseCandles15m,
         candles1h: baseCandles1h,
@@ -709,6 +710,129 @@ export async function runSignalConfluenceRegressionSuite() {
     );
 
     assert.strictEqual(buyRes.isValid, sellRes.isValid, 'BUY and SELL validity must be 100% symmetrically matched');
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 19: Raw Bullish M1 SFP against Strong H1 Downtrend (Without Support) -> REJECTED
+  // -------------------------------------------------------------------------
+  runTest('TEST 19: Raw Bullish M1 SFP against Strong H1 Downtrend without support -> REJECTED (HTF_CONTRADICTION)', () => {
+    const ind1h = buildMockIndicators({
+      marketRegime: 'STRONG_DOWNTREND',
+      structure: 'BEARISH',
+      trendStructure: 'LH_LL',
+    });
+    const result = validateTradeSignalCandidate(
+      {
+        direction: 'BUY',
+        entry: 2640.0,
+        stopLoss: 2635.0,
+        tp1: 2650.0,
+        strategyFamily: 'LIQUIDITY_SWEEP',
+        setupName: 'M1 Bullish SFP',
+      },
+      {
+        currentPrice: 2640.0,
+        candles5m: baseCandles5m,
+        candles15m: baseCandles15m,
+        candles1h: baseCandles1h,
+        indicators5m: buildMockIndicators(),
+        indicators15m: buildMockIndicators(),
+        indicators1h: ind1h,
+        brokerSpecs: { minSlPoints: 35, maxSlPoints: 65, minRr: 1.0 },
+      }
+    );
+    assert.strictEqual(result.isValid, false, 'Raw M1 bullish SFP against 1H downtrend must be rejected');
+    assert.ok(result.rejectionReason?.includes('HTF_CONTRADICTION'), `Expected HTF_CONTRADICTION, got: ${result.rejectionReason}`);
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 20: Raw Bearish M1 SFP against Strong H1 Uptrend (Without Support) -> REJECTED
+  // -------------------------------------------------------------------------
+  runTest('TEST 20: Raw Bearish M1 SFP against Strong H1 Uptrend without support -> REJECTED (HTF_CONTRADICTION)', () => {
+    const ind1h = buildMockIndicators({
+      marketRegime: 'STRONG_UPTREND',
+      structure: 'BULLISH',
+      trendStructure: 'HH_HL',
+    });
+    const result = validateTradeSignalCandidate(
+      {
+        direction: 'SELL',
+        entry: 2660.0,
+        stopLoss: 2665.0,
+        tp1: 2650.0,
+        strategyFamily: 'LIQUIDITY_SWEEP',
+        setupName: 'M1 Bearish SFP',
+      },
+      {
+        currentPrice: 2660.0,
+        candles5m: baseCandles5m,
+        candles15m: baseCandles15m,
+        candles1h: baseCandles1h,
+        indicators5m: buildMockIndicators(),
+        indicators15m: buildMockIndicators(),
+        indicators1h: ind1h,
+        brokerSpecs: { minSlPoints: 35, maxSlPoints: 65, minRr: 1.0 },
+      }
+    );
+    assert.strictEqual(result.isValid, false, 'Raw M1 bearish SFP against 1H uptrend must be rejected');
+    assert.ok(result.rejectionReason?.includes('HTF_CONTRADICTION'), `Expected HTF_CONTRADICTION, got: ${result.rejectionReason}`);
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 21: Repeated Scans of Same Liquidity Event -> DUPLICATE_ACTIVE
+  // -------------------------------------------------------------------------
+  runTest('TEST 21: Repeated scans of same liquidity event -> DUPLICATE_ACTIVE', () => {
+    const activeOpp = {
+      id: 'opp_test_1',
+      direction: 'BUY',
+      entry: 2640.0,
+      stopLoss: 2635.0,
+      tp1: 2650.0,
+      setupName: 'M1 Bullish SFP',
+      status: 'ACTIVE',
+      patternMetadata: { patternAnchorKey: 'anchor_123' },
+    };
+    const candidate = {
+      id: 'sig_test_2',
+      signal: 'BUY NOW',
+      entry: 2640.2,
+      stopLoss: 2635.0,
+      tp1: 2650.0,
+      setup: 'M1 Bullish SFP',
+      strategyFamily: 'LIQUIDITY_SWEEP',
+      patternMetadata: { patternAnchorKey: 'anchor_123' },
+    };
+    const dupRes = checkStructuralSameSetupIdentity(candidate as any, null, [activeOpp as any]);
+    assert.strictEqual(dupRes.isDuplicate, true, 'Repeated scan of active setup must be identified as duplicate');
+    assert.strictEqual(dupRes.reason, 'DUPLICATE_ACTIVE');
+  });
+
+  // -------------------------------------------------------------------------
+  // TEST 22: Genuinely New Sweep After Original Setup Completed -> ACCEPTED
+  // -------------------------------------------------------------------------
+  runTest('TEST 22: Genuinely new sweep after original setup completed -> ACCEPTED', () => {
+    const completedOpp = {
+      id: 'opp_test_1',
+      direction: 'BUY',
+      entry: 2640.0,
+      stopLoss: 2635.0,
+      tp1: 2650.0,
+      setupName: 'M1 Bullish SFP',
+      status: 'COMPLETED',
+      patternMetadata: { patternAnchorKey: 'anchor_123' },
+    };
+    const candidate = {
+      id: 'sig_test_3',
+      signal: 'BUY NOW',
+      entry: 2642.0,
+      stopLoss: 2637.0,
+      tp1: 2652.0,
+      setup: 'M1 Bullish SFP',
+      strategyFamily: 'LIQUIDITY_SWEEP',
+      patternMetadata: { patternAnchorKey: 'anchor_124' }, // new anchor key
+    };
+    const dupRes = checkStructuralSameSetupIdentity(candidate as any, null, [completedOpp as any]);
+    assert.strictEqual(dupRes.isDuplicate, false, 'New sweep after original setup completed must not be blocked as duplicate');
   });
 
   console.log('========================================================================');

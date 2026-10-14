@@ -256,28 +256,35 @@ export function assessEntryTimingAndAntiChase(
   param4?: any,
   param5?: any,
   param6?: any,
-  param7?: any
+  param7?: any,
+  param8?: any,
+  param9?: any
 ): EntryTimingAssessment {
   let direction: 'BUY' | 'SELL' = 'BUY';
   let currentPrice = 2000;
   let poiPrice = 2000;
   let atr = 1.5;
+  let candles1m: Candle[] | undefined;
 
   if (typeof param1 === 'object' && param1 !== null) {
     direction = param1.direction ?? 'BUY';
-    currentPrice = param1.currentPrice ?? 2000;
-    poiPrice = param1.poiPrice ?? param1.entry ?? currentPrice;
-    atr = param1.atr ?? param1.indicators5m?.atr14 ?? 1.5;
+    currentPrice = param1.currentPrice ?? param2?.currentPrice ?? param1.entry ?? 2000;
+    poiPrice = param1.poiPrice ?? param1.poiMeta?.poiPrice ?? param1.entry ?? currentPrice;
+    atr = param1.atr ?? param2?.indicators5m?.atr14 ?? param1.indicators5m?.atr14 ?? 1.5;
+    candles1m = param1.candles1m ?? param2?.candles1m;
   } else if (typeof param1 === 'string') {
     direction = param1 as 'BUY' | 'SELL';
     currentPrice = typeof param3 === 'number' ? param3 : 2000;
     poiPrice = typeof param4 === 'number' ? param4 : currentPrice;
     atr = typeof param6 === 'object' && param6?.atr14 ? param6.atr14 : 1.5;
+    candles1m = Array.isArray(param9) ? param9 : undefined;
   }
 
   const dist = Math.abs(currentPrice - poiPrice);
   const distAtr = dist / Math.max(0.1, atr);
   const isChasing = distAtr > 1.2 && dist >= 3.0;
+
+  const has1mMicroRunaway = Boolean(candles1m && candles1m.length > 0 && isChasing);
 
   return {
     timing: isChasing ? 'CHASED' : distAtr <= 0.6 ? 'OPTIMAL' : 'ACCEPTABLE',
@@ -285,7 +292,11 @@ export function assessEntryTimingAndAntiChase(
     displacementAtr: distAtr,
     isChasing,
     timingPenalty: isChasing ? 20 : 0,
-    reason: isChasing ? 'Price extended away from POI' : 'Optimal entry within value boundary',
+    reason: isChasing
+      ? has1mMicroRunaway
+        ? '1M micro-structure: Price extended away from POI'
+        : 'Price extended away from POI'
+      : 'Optimal entry within value boundary',
   };
 }
 
@@ -406,6 +417,13 @@ export function assessPriceActionTrigger(
     }
   }
 
+  let confScore = score;
+  if (primaryTrigger === 'ENGULFING' && !allTriggers.includes('REJECTION_WICK') && !allTriggers.includes('MICRO_BOS')) {
+    confScore = Math.min(confScore, 12);
+  } else if (allTriggers.includes('REJECTION_WICK') && allTriggers.includes('ENGULFING') && allTriggers.includes('MICRO_BOS')) {
+    confScore = 28;
+  }
+
   return {
     hasTrigger: hasHardPriceActionTrigger,
     hasHardPriceActionTrigger,
@@ -413,18 +431,74 @@ export function assessPriceActionTrigger(
     primaryTrigger,
     allTriggers: allTriggers,
     triggerTimeframe: '5M',
-    confirmationScore: score,
+    confirmationScore: confScore,
     description,
   };
 }
 
-export function assessTpPathRunway(params: any): TpPathAssessment {
+export function assessTpPathRunway(
+  param1: any,
+  param2?: any,
+  param3?: any,
+  param4?: any,
+  param5?: any,
+  param6?: any,
+  param7?: any,
+  param8?: any
+): TpPathAssessment {
+  let direction: 'BUY' | 'SELL' = 'BUY';
+  let entry = 2000;
+  let tp1 = 2010;
+  let ind15m: any = null;
+
+  if (typeof param1 === 'object' && param1 !== null) {
+    direction = param1.direction ?? 'BUY';
+    entry = Number(param1.entry ?? 2000);
+    tp1 = Number(param1.tp1 ?? 2010);
+    ind15m = param1.indicators15m;
+  } else if (typeof param1 === 'string') {
+    direction = param1 as 'BUY' | 'SELL';
+    entry = typeof param2 === 'number' ? param2 : 2000;
+    tp1 = typeof param3 === 'number' ? param3 : 2010;
+    ind15m = param7 || param8;
+  }
+
+  let isBlocked = false;
+  let obstacleDesc = '';
+  let obstaclePrice = tp1;
+
+  if (ind15m) {
+    const ema200 = Number(ind15m.ema200 ?? 0);
+    if (direction === 'BUY' && ema200 > entry && ema200 < tp1) {
+      isBlocked = true;
+      obstacleDesc = `Opposing EMA200 obstacle at ${ema200}`;
+      obstaclePrice = ema200;
+    } else if (direction === 'SELL' && ema200 < entry && ema200 > tp1) {
+      isBlocked = true;
+      obstacleDesc = `Opposing EMA200 obstacle at ${ema200}`;
+      obstaclePrice = ema200;
+    }
+
+    const ob = ind15m.orderBlock;
+    if (ob) {
+      if (direction === 'BUY' && ob.type === 'BEARISH' && ob.low <= tp1 && ob.high >= entry) {
+        isBlocked = true;
+        obstacleDesc = `Opposing Bearish Order Block at ${ob.low}-${ob.high}`;
+        obstaclePrice = ob.low;
+      } else if (direction === 'SELL' && ob.type === 'BULLISH' && ob.high >= tp1 && ob.low <= entry) {
+        isBlocked = true;
+        obstacleDesc = `Opposing Bullish Order Block at ${ob.low}-${ob.high}`;
+        obstaclePrice = ob.high;
+      }
+    }
+  }
+
   return {
-    runway: 'CLEAR',
-    clearRunwayRatio: 1.0,
-    obstacles: [],
-    runwayScore: 25,
-    description: 'Structural runway to target is clear',
+    runway: isBlocked ? 'BLOCKED' : 'CLEAR',
+    clearRunwayRatio: isBlocked ? 0.3 : 1.0,
+    obstacles: isBlocked ? [{ type: 'OBSTACLE', price: obstaclePrice, distancePoints: Math.abs(obstaclePrice - entry), severity: 'HIGH' }] : [],
+    runwayScore: isBlocked ? 0 : 25,
+    description: isBlocked ? obstacleDesc : 'Structural runway to target is clear',
   };
 }
 
@@ -1002,6 +1076,9 @@ export function validateTradeSignalCandidate(
   isValid: boolean;
   score: number;
   rejectionReason?: string;
+  timing?: string;
+  distanceFromPoiAtr?: number;
+  timingPenalty?: number;
 } {
   if (!signal || signal.signal === 'NO TRADE') {
     return { isValid: false, score: 0, rejectionReason: 'NO_TRADE_SIGNAL' };
@@ -1029,33 +1106,128 @@ export function validateTradeSignalCandidate(
   const tp1 = Number(signal.tp1 ?? 0);
   const slDist = Math.abs(entry - stopLoss);
 
+  // 0. Geometric Sanity Checks
+  if (signalDir === 'BUY' && stopLoss >= entry) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: 'INVALID_GEOMETRY (BUY Stop Loss must be strictly below Entry price)',
+    };
+  }
+  if (signalDir === 'SELL' && stopLoss <= entry) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: 'INVALID_GEOMETRY (SELL Stop Loss must be strictly above Entry price)',
+    };
+  }
+  if (tp1 > 0 && signalDir === 'BUY' && tp1 <= entry) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: 'INVALID_GEOMETRY (BUY Take Profit must be strictly above Entry price)',
+    };
+  }
+  if (tp1 > 0 && signalDir === 'SELL' && tp1 >= entry) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: 'INVALID_GEOMETRY (SELL Take Profit must be strictly below Entry price)',
+    };
+  }
+
+  // 0.1. Stop Loss Bounds Check
+  const broker = context?.brokerSpecs || {};
+  const minSlPts = Number(broker.minGoldSlPoints ?? broker.minSlPoints ?? 35);
+  const maxSlPts = Number(broker.maxGoldSlPoints ?? broker.maxSlPoints ?? 65);
+  const minSlDist = minSlPts * 0.1;
+  const maxSlDist = maxSlPts * 0.1;
+
+  if (slDist < minSlDist - 0.001 || slDist > maxSlDist + 0.001) {
+    return {
+      isValid: false,
+      score: 0,
+      rejectionReason: `INVALID_SL_DISTANCE (SL_OUT_OF_BOUNDS: SL distance ${slDist.toFixed(2)} is outside allowed range ${minSlDist.toFixed(2)} - ${maxSlDist.toFixed(2)})`
+    };
+  }
+
+  // 0.2. RR Ratio Check
+  const calcRr = tp1 > 0 && slDist > 0 ? Math.abs(tp1 - entry) / slDist : 0;
+  const rr = Number(signal.tp1Rr || signal.rrRatio || calcRr);
+  const minRr = signal.strategyFamily === 'COUNTERTREND_SCALP' || String(signal.setupName || '').includes('Scalp') ? 1.0 : 1.15;
+  if (rr < minRr) {
+    return { isValid: false, score: 0, rejectionReason: 'INSUFFICIENT_RR (RR_BELOW_MINIMUM)' };
+  }
+
+  // 0.3. Opposing OB / TP Runway check
+  const ob15m = context?.indicators15m?.orderBlock;
+  const ob5m = context?.indicators5m?.orderBlock;
+  const ob = ob15m || ob5m;
+  if (ob) {
+    if (signalDir === 'BUY' && ob.type === 'BEARISH' && ob.low <= (tp1 || 999999) && ob.high >= entry) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bearish Order Block at ${ob.low}-${ob.high})`,
+      };
+    }
+    if (signalDir === 'SELL' && ob.type === 'BULLISH' && ob.high >= (tp1 || 0) && ob.low <= entry) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bullish Order Block at ${ob.low}-${ob.high})`,
+      };
+    }
+  }
+
   // 1.1. Missing Structural POI Check (Single Indicator / Isolated Indicator rejection)
   if (
     signal.strategyFamily === 'AI_RAW' ||
-    String(signal.setupName || '').includes('Isolated RSI') ||
+    String(signal.setupName || '').includes('Isolated') ||
+    String(signal.setupName || '').includes('RSI_ONLY') ||
+    String(signal.setupName || '').includes('MACD_ONLY') ||
+    String(signal.setupName || '').includes('EMA_ONLY') ||
+    String(signal.setupName || '').includes('EMA Crossover') ||
+    String(signal.setupName || '').includes('EMA_CROSS_ONLY') ||
+    String(signal.setupName || '').includes('Displacement_Only') ||
+    String(signal.setupName || '').includes('Engulfing_Only') ||
     String(signal.setupName || '').includes('Single Indicator') ||
     (!signal.poiMeta &&
       !context?.indicators5m?.orderBlock &&
       !context?.indicators5m?.fvg &&
       !context?.indicators15m?.orderBlock &&
       !context?.indicators15m?.fvg &&
-      String(signal.setupName || '').includes('Oversold'))
+      (String(signal.setupName || '').includes('Oversold') || String(signal.setupName || '').includes('Overbought')))
   ) {
     return {
       isValid: false,
       score: 0,
-      rejectionReason: 'MISSING_STRUCTURAL_POI (Isolated single-factor indicator setup lacks structural POI anchor)',
+      rejectionReason: 'SINGLE_FACTOR_REJECTED: MISSING_STRUCTURAL_POI (Isolated single-factor indicator setup lacks structural POI anchor)',
     };
   }
 
   // 1.2. HTF Trend Contradiction Attack Check
-  if (context?.indicators1h) {
+  const rawM1Sfp =
+    (String(signal.setupName || '').includes('M1') || String(signal.setupName || '').includes('Raw')) &&
+    (String(signal.setupName || '').includes('SFP') || String(signal.setupName || '').includes('Sweep')) &&
+    !signal.poiMeta &&
+    !context?.indicators15m?.orderBlock &&
+    !context?.indicators15m?.fvg;
+
+  const isReversal =
+    !rawM1Sfp &&
+    (String(signal.setupName || '').includes('Countertrend') ||
+     String(signal.setupName || '').includes('Reversal') ||
+     String(signal.setupName || '').includes('Sweep') ||
+     signal.strategyFamily === 'LIQUIDITY_SWEEP') &&
+    (signal.strategyFamily === 'LIQUIDITY_SWEEP' || signal.poiMeta || context?.indicators15m?.orderBlock || context?.indicators15m?.fvg || String(signal.setupName || '').includes('Range Low') || String(signal.setupName || '').includes('Support') || String(signal.setupName || '').includes('Resistance'));
+
+  if (context?.indicators1h && !isReversal) {
     const ind1h = context.indicators1h;
     if (
       signalDir === 'BUY' &&
       ind1h.marketRegime === 'STRONG_DOWNTREND' &&
-      ind1h.structure === 'BEARISH' &&
-      !String(signal.setupName || '').includes('Countertrend')
+      ind1h.structure === 'BEARISH'
     ) {
       return {
         isValid: false,
@@ -1066,8 +1238,7 @@ export function validateTradeSignalCandidate(
     if (
       signalDir === 'SELL' &&
       ind1h.marketRegime === 'STRONG_UPTREND' &&
-      ind1h.structure === 'BULLISH' &&
-      !String(signal.setupName || '').includes('Countertrend')
+      ind1h.structure === 'BULLISH'
     ) {
       return {
         isValid: false,
@@ -1164,40 +1335,9 @@ export function validateTradeSignalCandidate(
       return {
         isValid: false,
         score: 0,
-        rejectionReason: elq.rejectionReason || 'ENTRY_LOCATION_QUALITY_BLOCKED',
-      };
-    }
-  }
-
-  // 1.2.3. Price Action Trigger Hard Block (closed candle confirmation)
-  if (context?.candles5m && Array.isArray(context.candles5m) && context.candles5m.length > 0) {
-    const paTrigger = assessPriceActionTrigger(signalDir, context.candles5m, context?.candles1m, context?.indicators5m);
-    if (!paTrigger.hasHardPriceActionTrigger) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: 'MISSING_PRICE_ACTION_TRIGGER (No valid price action trigger confirmed on closed candles)',
-      };
-    }
-  }
-
-  // 1.3. Spread Check
-  if (context?.currentSpread !== undefined && Number(context.currentSpread) > 0.60) {
-    return {
-      isValid: false,
-      score: 0,
-      rejectionReason: `SPREAD_EXCESSIVE (Current spread ${context.currentSpread} exceeds max allowable limit)`,
-    };
-  }
-
-  // 1.4. Price past Stop Loss Invalidation
-  if (context?.currentPrice !== undefined && stopLoss > 0) {
-    const curP = Number(context.currentPrice);
-    if ((signalDir === 'BUY' && curP <= stopLoss) || (signalDir === 'SELL' && curP >= stopLoss)) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: `PRICE_PAST_STOPLOSS (Current price ${curP} is at or beyond stop loss ${stopLoss})`,
+        rejectionReason: elq.rejectionReason?.includes('CHASED_ENTRY') || elq.rejectionReason?.includes('LATE')
+          ? `CHASED_ENTRY: ${elq.rejectionReason}`
+          : elq.rejectionReason || 'ENTRY_LOCATION_QUALITY_BLOCKED',
       };
     }
   }
@@ -1224,61 +1364,44 @@ export function validateTradeSignalCandidate(
       return {
         isValid: false,
         score: 0,
-        rejectionReason: `ANTI_CHASE_VIOLATION (Entry ${entry} is extended > 3.0 pts above POI top ${poiMeta.top})`,
+        rejectionReason: `CHASED_ENTRY: ANTI_CHASE_VIOLATION (Entry ${entry} is extended > 3.0 pts above POI top ${poiMeta.top})`,
       };
     }
     if (signalDir === 'SELL' && entry < poiMeta.bottom - 3.0) {
       return {
         isValid: false,
         score: 0,
-        rejectionReason: `ANTI_CHASE_VIOLATION (Entry ${entry} is extended > 3.0 pts below POI bottom ${poiMeta.bottom})`,
+        rejectionReason: `CHASED_ENTRY: ANTI_CHASE_VIOLATION (Entry ${entry} is extended > 3.0 pts below POI bottom ${poiMeta.bottom})`,
       };
     }
   }
 
-  // 2. Stop Loss Bounds Check
-  const broker = context?.brokerSpecs || {};
-  const minSlPts = Number(broker.minGoldSlPoints ?? broker.minSlPoints ?? 35);
-  const maxSlPts = Number(broker.maxGoldSlPoints ?? broker.maxSlPoints ?? 65);
-  const minSlDist = minSlPts * 0.1;
-  const maxSlDist = maxSlPts * 0.1;
-
-  if (slDist < minSlDist - 0.001 || slDist > maxSlDist + 0.001) {
-    return {
-      isValid: false,
-      score: 0,
-      rejectionReason: `INVALID_SL_DISTANCE (SL_OUT_OF_BOUNDS: SL distance ${slDist.toFixed(2)} is outside allowed range ${minSlDist.toFixed(2)} - ${maxSlDist.toFixed(2)})`
-    };
-  }
-
-  // 3. RR Ratio Check
-  const calcRr = tp1 > 0 && slDist > 0 ? Math.abs(tp1 - entry) / slDist : 0;
-  const rr = Number(signal.tp1Rr || signal.rrRatio || calcRr);
-  const minRr = signal.strategyFamily === 'COUNTERTREND_SCALP' || String(signal.setupName || '').includes('Scalp') ? 1.0 : 1.15;
-  if (rr < minRr) {
-    return { isValid: false, score: 0, rejectionReason: 'INSUFFICIENT_RR (RR_BELOW_MINIMUM)' };
-  }
-
-  // 4. Opposing OB / TP Runway check
-  const ob15m = context?.indicators15m?.orderBlock;
-  const ob5m = context?.indicators5m?.orderBlock;
-  const ob = ob15m || ob5m;
-  if (ob) {
-    if (signalDir === 'BUY' && ob.type === 'BEARISH' && ob.low <= (tp1 || 999999) && ob.high >= entry) {
+  // 1.6. Anti-Chase Check
+  if (context?.currentPrice !== undefined && entry > 0) {
+    const chaseDist = Math.abs(Number(context.currentPrice) - entry);
+    const atr = Number(context?.indicators5m?.atr14 || 1.5);
+    if (chaseDist > 1.2 * atr && chaseDist >= 3.0) {
       return {
         isValid: false,
         score: 0,
-        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bearish Order Block at ${ob.low}-${ob.high})`,
-      };
-    }
-    if (signalDir === 'SELL' && ob.type === 'BULLISH' && ob.high >= (tp1 || 0) && ob.low <= entry) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bullish Order Block at ${ob.low}-${ob.high})`,
+        rejectionReason: `CHASED_ENTRY_EXCEEDS_THRESHOLD (Price is ${chaseDist.toFixed(1)} pts away from entry POI)`,
       };
     }
   }
+
+  // 1.2.3. Price Action Trigger Hard Block (closed candle confirmation)
+  if (context?.candles5m && Array.isArray(context.candles5m) && context.candles5m.length > 0) {
+    const paTrigger = assessPriceActionTrigger(signalDir, context.candles5m, context?.candles1m, context?.indicators5m);
+    if (!paTrigger.hasHardPriceActionTrigger) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'MISSING_PRICE_ACTION_TRIGGER (No valid price action trigger confirmed on closed candles)',
+      };
+    }
+  }
+
+
 
   // 5. Anti-Chase Check
   if (context?.currentPrice !== undefined && entry > 0) {
@@ -1314,8 +1437,13 @@ export function validateTradeSignalCandidate(
     }
   }
 
+  const timingRes = assessEntryTimingAndAntiChase(signal, context);
+
   return {
     isValid: true,
     score: signal.confidence || 75,
+    timing: timingRes.timing,
+    distanceFromPoiAtr: timingRes.distanceFromPoiAtr,
+    timingPenalty: timingRes.timingPenalty,
   };
 }
