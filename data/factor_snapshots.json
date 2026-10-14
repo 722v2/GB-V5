@@ -1657,5 +1657,26 @@
     },
     "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=OVERSOLD|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
     "createdAt": 1791982935341
+  },
+  "sig_1791984355524_jqws8": {
+    "signalId": "sig_1791984355524_jqws8",
+    "setupFamily": "LIQUIDITY_SWEEP",
+    "direction": "BUY",
+    "factors": {
+      "setupFamily": "LIQUIDITY_SWEEP",
+      "direction": "BUY",
+      "htfStructure": "DOWNTREND",
+      "m15Structure": "BEARISH",
+      "marketRegime": "STRONG_TREND",
+      "liquidity": "SWEEP_SELL_SIDE",
+      "orderBlock": "BEARISH_OB",
+      "fvg": "BEARISH_FVG",
+      "zone": "DISCOUNT",
+      "rsi": "NEUTRAL",
+      "macd": "BEARISH",
+      "volatility": "HIGH"
+    },
+    "combinationKey": "direction=BUY|fvg=BEARISH_FVG|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=NEUTRAL|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
+    "createdAt": 1791984355524
   }
 }

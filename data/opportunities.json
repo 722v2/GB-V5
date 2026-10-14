@@ -10509,9 +10509,9 @@
     "strategyFamily": "LIQUIDITY_SWEEP",
     "direction": "BUY",
     "timeframe": "M1 / M5",
-    "status": "DISPATCHED",
+    "status": "FAILED",
     "firstObservedTime": 1791982935372,
-    "lastUpdatedTime": 1791983943200,
+    "lastUpdatedTime": 1791984003388,
     "entry": 4085.61,
     "stopLoss": 4082.11,
     "tp1": 4111.12,
@@ -10539,6 +10539,45 @@
       "combinationKey": "direction=BUY|fvg=NONE|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=OVERSOLD|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
       "createdAt": 1791982935341
     },
-    "dispatchedAt": 1791982935578
+    "dispatchedAt": 1791982935578,
+    "failedAt": 1791984003388
+  },
+  "opp_liquidity_sweep_buy_4086.5": {
+    "id": "opp_liquidity_sweep_buy_4086.5",
+    "setupName": "GB-V5 Liquidity Sweep & Rejection (M1 Bullish SFP)",
+    "strategyFamily": "LIQUIDITY_SWEEP",
+    "direction": "BUY",
+    "timeframe": "M1 / M5",
+    "status": "DISPATCHED",
+    "firstObservedTime": 1791984355537,
+    "lastUpdatedTime": 1791984415536,
+    "entry": 4086.7,
+    "stopLoss": 4082.52,
+    "tp1": 4093.19,
+    "tp2": 4107.65,
+    "confidence": 89,
+    "signalId": "sig_1791984355524_jqws8",
+    "factorSnapshot": {
+      "signalId": "sig_1791984355524_jqws8",
+      "setupFamily": "LIQUIDITY_SWEEP",
+      "direction": "BUY",
+      "factors": {
+        "setupFamily": "LIQUIDITY_SWEEP",
+        "direction": "BUY",
+        "htfStructure": "DOWNTREND",
+        "m15Structure": "BEARISH",
+        "marketRegime": "STRONG_TREND",
+        "liquidity": "SWEEP_SELL_SIDE",
+        "orderBlock": "BEARISH_OB",
+        "fvg": "BEARISH_FVG",
+        "zone": "DISCOUNT",
+        "rsi": "NEUTRAL",
+        "macd": "BEARISH",
+        "volatility": "HIGH"
+      },
+      "combinationKey": "direction=BUY|fvg=BEARISH_FVG|htfStructure=DOWNTREND|liquidity=SWEEP_SELL_SIDE|m15Structure=BEARISH|macd=BEARISH|marketRegime=STRONG_TREND|orderBlock=BEARISH_OB|rsi=NEUTRAL|setupFamily=LIQUIDITY_SWEEP|volatility=HIGH|zone=DISCOUNT",
+      "createdAt": 1791984355524
+    },
+    "dispatchedAt": 1791984355702
   }
 }
