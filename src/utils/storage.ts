@@ -158,6 +158,21 @@ export function calculateAccountStats(startingBalance: number, currentBalance: n
 
   const totalRiskTaken = Number(ledger.reduce((acc, t) => acc + (t.riskAmount || 0), 0).toFixed(2));
 
+  // Phase 5B Separate Analytics Metrics
+  const manualTrades = ledger.filter((t) => (t.source === 'MANUAL' || !t.source) && t.result !== 'NOT_ENTERED');
+  const userTradesEntered = manualTrades.length;
+  const userTradesWon = manualTrades.filter((t) => t.result === 'WIN').length;
+  const userTradesLost = manualTrades.filter((t) => t.result === 'LOSS').length;
+  const userTradesPl = Number(manualTrades.filter((t) => t.result === 'WIN' || t.result === 'LOSS').reduce((acc, t) => acc + (t.pl || 0), 0).toFixed(2));
+
+  const mt5Trades = ledger.filter((t) => t.source === 'MT5' && t.result !== 'NOT_ENTERED');
+  const mt5TradesExecuted = mt5Trades.length;
+  const mt5TradesWon = mt5Trades.filter((t) => t.result === 'WIN').length;
+  const mt5TradesLost = mt5Trades.filter((t) => t.result === 'LOSS').length;
+  const mt5TradesPl = Number(mt5Trades.filter((t) => t.result === 'WIN' || t.result === 'LOSS').reduce((acc, t) => acc + (t.pl || 0), 0).toFixed(2));
+
+  const signalsNotEntered = ledger.filter((t) => t.result === 'NOT_ENTERED').length;
+
   return {
     currentBalance: Number(currentBalance.toFixed(2)),
     startingBalance: Number(startingBalance.toFixed(2)),
@@ -177,5 +192,18 @@ export function calculateAccountStats(startingBalance: number, currentBalance: n
     losingStreak: currentLosingStreak, // return current streak for risk adaptation
     averageRR,
     totalRiskTaken,
+    // Phase 5B Separate Analytics
+    signalsGenerated: numberOfTrades + signalsNotEntered,
+    signalsNotEntered,
+    userTradesEntered,
+    userTradesWon,
+    userTradesLost,
+    userTradesPl,
+    mt5TradesExecuted,
+    mt5TradesWon,
+    mt5TradesLost,
+    mt5TradesPl,
+    userReportedPnl: userTradesPl,
+    brokerConfirmedPnl: mt5TradesPl,
   };
 }

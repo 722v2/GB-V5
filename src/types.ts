@@ -588,7 +588,7 @@ export interface TradeLedgerItem {
   reinforcements?: Reinforcement[];
   averageEntry?: number;
   totalRiskAmount?: number;
-  // Phase 4 Trade Management fields
+  // Phase 4 & 5B Trade Management fields
   managementState?: TradeManagementState;
   lastManagementAction?: ManagementActionType;
   lastManagementTimestamp?: number;
@@ -599,11 +599,23 @@ export interface TradeLedgerItem {
   suggestedSL?: number;
   suggestedTP2?: number;
   notifiedStates?: string[];
+  userEntryPrice?: number;
+  userExitPrice?: number;
+  userReportedPnl?: number;
+  brokerConfirmedPnl?: number;
+  managementRecommendation?: string;
+  isRecommendationApplied?: boolean;
 }
 
 export type TradeManagementState =
   | 'ACTIVE'
   | 'HOLD'
+  | 'CONTINUE'
+  | 'PROTECT'
+  | 'ADJUST_SL'
+  | 'EXTEND_TP'
+  | 'PARTIAL_EXIT'
+  | 'CLOSE'
   | 'TP1_REACHED'
   | 'TP1_HIT'
   | 'TP1_APPROACHING'
@@ -623,6 +635,8 @@ export type TradeManagementState =
 
 export type ManagementActionType =
   | 'HOLD'
+  | 'CONTINUE'
+  | 'PROTECT'
   | 'PARTIAL_CLOSE_TP1'
   | 'UPDATE_SL'
   | 'UPDATE_TP2'
@@ -682,6 +696,20 @@ export interface AccountStats {
   losingStreak: number;
   averageRR: number;
   totalRiskTaken: number;
+  // Phase 5B Separate Analytics Fields
+  signalsGenerated?: number;
+  totalSignals?: number;
+  signalsNotEntered?: number;
+  userTradesEntered?: number;
+  userTradesWon?: number;
+  userTradesLost?: number;
+  userTradesPl?: number;
+  mt5TradesExecuted?: number;
+  mt5TradesWon?: number;
+  mt5TradesLost?: number;
+  mt5TradesPl?: number;
+  userReportedPnl?: number;
+  brokerConfirmedPnl?: number;
 }
 
 export interface ScannerConfig {
@@ -755,6 +783,8 @@ export interface BacktestTradeItem {
   finalAverageEntry?: number;
   combinedRisk?: number;
   addonUsed?: boolean;
+  grossPl?: number;
+  spreadCost?: number;
 }
 
 export interface HistoricalDataValidationReport {
@@ -848,6 +878,14 @@ export interface BacktestResultData {
   trades: BacktestTradeItem[];
   equityCurve: { time: string; timestamp: number; balance: number }[];
   validationReport?: HistoricalDataValidationReport;
+  totalSpreadCost?: number;
+  duplicateSetupsSuppressed?: number;
+  executionAssumptions?: {
+    spreadDollars: number;
+    slippageDollars: number;
+    executionModel: string;
+    disclosures: string[];
+  };
 }
 
 export interface TradeOpportunity {

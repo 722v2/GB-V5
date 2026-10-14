@@ -24,6 +24,12 @@ const testFiles = [
   'tests/manualScanTriggerRegression.test.ts',
   'tests/mt5BridgeCandlePersistence.test.ts',
   'tests/phase1LiveExecutionSafetyRegression.test.ts',
+  'tests/phase5BTradeManagementAndUserTrackingRegression.test.ts',
+  'tests/phase7EvidenceIntegrityRegression.test.ts',
+  'tests/phase7BCandidateFormationQualityRegression.test.ts',
+  'tests/phase7B1CandidateFormationCorrections.test.ts',
+  'tests/phase7CBacktestQualityRegression.test.ts',
+  'tests/phase8ExecutionImplementationRegression.test.ts',
 ];
 
 console.log('====================================================');

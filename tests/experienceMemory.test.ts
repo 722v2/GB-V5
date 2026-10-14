@@ -2,7 +2,9 @@
  * Comprehensive Test Suite for Trading Experience / Feedback Memory Engine
  */
 
-import { storage } from '../server/storage.js';
+import fs from 'fs';
+import path from 'path';
+import { storage, PersistentStorage } from '../server/storage.js';
 import {
   experienceMemoryEngine,
   MIN_SAMPLE_SIZE,
@@ -30,7 +32,9 @@ async function runTests() {
   console.log('🧪 TRADING EXPERIENCE / FEEDBACK MEMORY TEST SUITE');
   console.log('====================================================');
 
-  storage.setTestingMode(true);
+  const testStoragePath = path.join(process.cwd(), 'data', 'test_experience_memory.json');
+  if (fs.existsSync(testStoragePath)) { try { fs.unlinkSync(testStoragePath); } catch {} }
+  const testStorage = new PersistentStorage({ isIsolatedTest: true, storageFilePath: testStoragePath });
   experienceMemoryEngine.resetIndexForTesting();
 
   const mockInd1h: Partial<TechnicalIndicators> = {
@@ -91,7 +95,8 @@ async function runTests() {
     mockSignal1,
     mockInd1h as any,
     mockInd15m as any,
-    mockInd5m as any
+    mockInd5m as any,
+    testStorage
   );
 
   assert(snapshot1 !== null, '1.1 Decision snapshot successfully captured');
@@ -109,7 +114,7 @@ async function runTests() {
   assert(!key.includes('stopLoss='), '1.10 combinationKey has no stopLoss field');
 
   // Verify snapshot stored in storage
-  const storedSnapshot = storage.getFactorSnapshot('test_sig_exp_001');
+  const storedSnapshot = testStorage.getFactorSnapshot('test_sig_exp_001');
   assert(storedSnapshot?.combinationKey === key, '1.11 Snapshot persisted and retrievable via storage');
 
   // -------------------------------------------------------------
@@ -131,7 +136,8 @@ async function runTests() {
     mockSignalDifferentPrice,
     mockInd1h as any,
     mockInd15m as any,
-    mockInd5m as any
+    mockInd5m as any,
+    testStorage
   );
 
   assert(
@@ -145,7 +151,8 @@ async function runTests() {
     mockSignalDifferentPrice,
     mockInd1h as any,
     mockInd15mRanging as any,
-    mockInd5m as any
+    mockInd5m as any,
+    testStorage
   );
   assert(
     snapshot1?.combinationKey !== snapshotDifferentFactor?.combinationKey,
@@ -165,7 +172,9 @@ async function runTests() {
       realizedPnl: 2.35,
       timestamp: 1700000050000,
       closedAt: 1700000050000,
-    }
+    },
+    undefined,
+    testStorage
   );
   assert(winRecord !== null, '3.1 WIN outcome successfully linked to snapshot');
   assert(winRecord?.outcome === 'WIN', '3.2 Record reflects WIN outcome');
@@ -183,7 +192,9 @@ async function runTests() {
       outcome: 'WIN',
       realizedPnl: 5.0,
       timestamp: 1700000060000,
-    }
+    },
+    undefined,
+    testStorage
   );
   assert(unlinkedRecord === null, '4.1 Trade without snapshot is silently skipped (no record fabricated)');
 
@@ -193,7 +204,7 @@ async function runTests() {
   console.log('\n--- 5. Minimum Sample Size & Statistics ---');
   // Currently we only have 1 record in the index (winRecord).
   // With sampleSize = 1 < MIN_SAMPLE_SIZE (6), getExperienceContext MUST return null.
-  const contextUnderSample = experienceMemoryEngine.getExperienceContext(snapshot1!, 1700000100000);
+  const contextUnderSample = experienceMemoryEngine.getExperienceContext(snapshot1!, 1700000100000, testStorage);
   assert(
     contextUnderSample === null,
     `5.1 Sample size 1 (< MIN_SAMPLE_SIZE ${MIN_SAMPLE_SIZE}) returns null (no premature advice)`
@@ -210,21 +221,27 @@ async function runTests() {
       combinationKey: key,
       createdAt: 1700000000000 + i * 1000,
     };
-    storage.saveFactorSnapshot(snap);
-    experienceMemoryEngine.recordCompletedOutcome(snap, {
-      signalId: sId,
-      outcome: i <= 6 ? 'WIN' : 'LOSS', // 6 wins total, 1 loss total
-      realizedPnl: i <= 6 ? 2.5 : -1.5,
-      timestamp: 1700000050000 + i * 1000,
-      closedAt: 1700000050000 + i * 1000,
-    });
+    testStorage.saveFactorSnapshot(snap);
+    experienceMemoryEngine.recordCompletedOutcome(
+      snap,
+      {
+        signalId: sId,
+        outcome: i <= 6 ? 'WIN' : 'LOSS', // 6 wins total, 1 loss total
+        realizedPnl: i <= 6 ? 2.5 : -1.5,
+        timestamp: 1700000050000 + i * 1000,
+        closedAt: 1700000050000 + i * 1000,
+      },
+      undefined,
+      testStorage
+    );
   }
 
   // Now we have 7 records completed at <= 1700000057000.
   // Query at T = 1700000090000 (after completion).
   const contextSufficient = experienceMemoryEngine.getExperienceContext(
     { combinationKey: key, factors: snapshot1!.factors, signalId: 'test_new_signal' },
-    1700000090000
+    1700000090000,
+    testStorage
   );
 
   assert(contextSufficient !== null, '5.2 Sample size 7 (>= MIN_SAMPLE_SIZE) returns statistics');
@@ -243,7 +260,8 @@ async function runTests() {
   // At T = 1700000052000, only trade 1 & 2 completed (sampleSize = 2 < 6)
   const contextPastTime = experienceMemoryEngine.getExperienceContext(
     { combinationKey: key, factors: snapshot1!.factors, signalId: 'test_leakage_check' },
-    1700000052000
+    1700000052000,
+    testStorage
   );
   assert(
     contextPastTime === null,
@@ -253,7 +271,8 @@ async function runTests() {
   // Current signal cannot see itself (7 total - 1 self = 6 remaining)
   const contextSelfCheck = experienceMemoryEngine.getExperienceContext(
     { combinationKey: key, factors: snapshot1!.factors, signalId: 'test_sig_exp_001' },
-    1700000090000
+    1700000090000,
+    testStorage
   );
   assert(
     contextSelfCheck !== null && contextSelfCheck.sampleSize === 6,
@@ -264,36 +283,40 @@ async function runTests() {
   // TEST 7: Fail-Safe Handling
   // -------------------------------------------------------------
   console.log('\n--- 7. Fail-Safe Engine ---');
-  const safeContext = experienceMemoryEngine.getExperienceContext(null as any);
+  const safeContext = experienceMemoryEngine.getExperienceContext(null as any, Date.now(), testStorage);
   assert(safeContext === null, '7.1 Passing null gracefully returns null without throwing');
 
-  const safeCapture = experienceMemoryEngine.captureDecisionSnapshot(null as any);
+  const safeCapture = experienceMemoryEngine.captureDecisionSnapshot(null as any, undefined, undefined, undefined, testStorage);
   assert(safeCapture === null, '7.2 Passing null to capture gracefully returns null');
 
   // -------------------------------------------------------------
   // TEST 8: Feature Flag
   // -------------------------------------------------------------
   console.log('\n--- 8. Feature Flag ---');
-  const currentSettings = storage.getSettings();
-  storage.saveSettings({ ...currentSettings, enableExperienceMemory: false });
+  const currentSettings = testStorage.getSettings();
+  testStorage.saveSettings({ ...currentSettings, enableExperienceMemory: false });
 
   assert(
-    experienceMemoryEngine.isFeatureEnabled() === false,
+    experienceMemoryEngine.isFeatureEnabled(testStorage) === false,
     '8.1 Feature flag correctly reports disabled when set to false'
   );
 
   const disabledContext = experienceMemoryEngine.getExperienceContext(
     { combinationKey: key, factors: snapshot1!.factors, signalId: 'test_flag' },
-    1700000090000
+    1700000090000,
+    testStorage
   );
   assert(disabledContext === null, '8.2 When disabled, getExperienceContext returns null');
 
-  const disabledCapture = experienceMemoryEngine.captureDecisionSnapshot(mockSignal1);
+  const disabledCapture = experienceMemoryEngine.captureDecisionSnapshot(mockSignal1, undefined, undefined, undefined, testStorage);
   assert(disabledCapture === null, '8.3 When disabled, captureDecisionSnapshot returns null');
 
   // Restore settings
-  storage.saveSettings({ ...currentSettings, enableExperienceMemory: true });
-  assert(experienceMemoryEngine.isFeatureEnabled() === true, '8.4 Feature flag restored to true');
+  testStorage.saveSettings({ ...currentSettings, enableExperienceMemory: true });
+  assert(experienceMemoryEngine.isFeatureEnabled(testStorage) === true, '8.4 Feature flag restored to true');
+
+  // Clean up temporary test file
+  if (fs.existsSync(testStoragePath)) { try { fs.unlinkSync(testStoragePath); } catch {} }
 
   console.log('====================================================');
   console.log(`🏁 TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
@@ -306,5 +329,8 @@ async function runTests() {
 
 runTests().catch((err) => {
   console.error('Fatal test error:', err);
+  if (fs.existsSync(path.join(process.cwd(), 'data', 'test_experience_memory.json'))) {
+    try { fs.unlinkSync(path.join(process.cwd(), 'data', 'test_experience_memory.json')); } catch {}
+  }
   process.exit(1);
 });

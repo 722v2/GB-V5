@@ -843,9 +843,82 @@ export class TradeManagementEngine {
     }
 
     // -------------------------------------------------------------------------
-    // 3. Check TP1 Reach: Partial TP Recommendation & Profit Protection
+    // 3A. Predictive Pre-TP1 Evaluation (Approaching TP1: 65% - 99% progress)
+    // Master Spec Section 51.3: Evaluate continuation / extension or protection BEFORE reaching TP1
     // -------------------------------------------------------------------------
     const isTp1Reached = isBuy ? currentPrice >= tp1 : currentPrice <= tp1;
+    if (!isTp1Reached && health.tp1ProgressPct >= 65 && !trade.partialClosed) {
+      // 3A.1 Strong Continuation before TP1 -> Recommends Target Extension (EXTEND_TP)
+      const isStrongPreTp1Continuation =
+        health.oppositePressureScore < 20 &&
+        health.structureHealth.includes('CONTINUATION') &&
+        (health.regimeAlignment === 'STRONG_ALIGNMENT' || health.regimeAlignment === 'MODERATE_ALIGNMENT') &&
+        (isBuy ? (ind5m.rsi14 || 50) >= 55 : (ind5m.rsi14 || 50) <= 45);
+
+      if (isStrongPreTp1Continuation) {
+        const tp1Distance = Math.abs(tp1 - entry);
+        const proposedTp2 = tp2 && tp2 > 0
+          ? tp2
+          : (isBuy ? Number((tp1 + tp1Distance * 0.75).toFixed(2)) : Number((tp1 - tp1Distance * 0.75).toFixed(2)));
+
+        return {
+          actionType: 'UPDATE_TP2',
+          tradeId: trade.id,
+          direction: health.direction,
+          currentPrice,
+          entryPrice: entry,
+          oldSL: sl,
+          oldTP1: tp1,
+          oldTP2: tp2,
+          newTP2: proposedTp2,
+          floatingPnl: health.floatingPnl,
+          currentR: health.currentR,
+          managementState: 'TARGET_EXTENSION',
+          reason: `Strong ${health.direction} continuation momentum confirmed prior to TP1 arrival. Recommending target extension (EXTEND_TP) to $${proposedTp2.toFixed(2)} before TP1 closure.`,
+          confidence: 85,
+          timestamp: Date.now(),
+          source: 'DETERMINISTIC',
+          requiresConfirmation: true,
+        };
+      }
+
+      // 3A.2 Weakening before TP1 -> Recommends Early Profit Protection (PROTECT_PROFIT)
+      const isPreTp1Weakening =
+        health.oppositePressureScore >= 35 ||
+        health.structureHealth === 'WEAKENING';
+
+      if (isPreTp1Weakening) {
+        const protectedCandidateSl = isBuy
+          ? (currentPrice > entry + 0.5 ? Number((entry + 0.3).toFixed(2)) : sl)
+          : (currentPrice < entry - 0.5 ? Number((entry - 0.3).toFixed(2)) : sl);
+
+        if ((isBuy && protectedCandidateSl > sl) || (!isBuy && protectedCandidateSl < sl)) {
+          return {
+            actionType: 'UPDATE_SL',
+            tradeId: trade.id,
+            direction: health.direction,
+            currentPrice,
+            entryPrice: entry,
+            oldSL: sl,
+            newSL: protectedCandidateSl,
+            oldTP1: tp1,
+            oldTP2: tp2,
+            floatingPnl: health.floatingPnl,
+            currentR: health.currentR,
+            managementState: 'PROTECT_PROFIT',
+            reason: `Momentum weakening and counter-pressure detected before TP1 (${health.oppositePressureScore}%). Recommending protective stop loss adjustment to $${protectedCandidateSl.toFixed(2)} to secure gains.`,
+            confidence: 80,
+            timestamp: Date.now(),
+            source: 'DETERMINISTIC',
+            requiresConfirmation: true,
+          };
+        }
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // 3B. Check TP1 Reach: Partial TP Recommendation & Profit Protection
+    // -------------------------------------------------------------------------
     if (isTp1Reached && !trade.partialClosed) {
       // Calculate suggested protected SL (Breakeven + buffer or protected structural swing)
       let suggestedProtectedSl: number;

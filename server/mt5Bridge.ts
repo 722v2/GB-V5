@@ -65,8 +65,12 @@ export type { AccountExecutionMode };
 export type MT5CommandAction = 'BUY' | 'SELL' | 'BUY_LIMIT' | 'SELL_LIMIT' | 'CLOSE' | 'MODIFY' | 'CANCEL';
 
 export type MT5CommandStatus = 
+  | 'REQUESTED'
   | 'PENDING'
+  | 'SUBMITTED'
   | 'DISPATCHED'
+  | 'ACKNOWLEDGED'
+  | 'PARTIALLY_FILLED'
   | 'FILLED'
   | 'REJECTED'
   | 'FAILED'
@@ -97,6 +101,7 @@ export interface MT5ExecutionCommand {
   positionTicket?: number;
   executionPrice?: number;
   executionTime?: number;
+  filledVolume?: number;
   retcode?: number;
   retcodeDescription?: string;
   failureReason?: string;
@@ -285,13 +290,13 @@ export class MT5BridgeService {
             const now = Date.now();
             for (const c of data.commands) {
               if (c && c.commandId) {
-                // Restart Recovery: In-flight DISPATCHED command transitions to UNRESOLVED
+                // Restart Recovery: In-flight DISPATCHED or SUBMITTED command transitions to UNRESOLVED
                 // Safe unknown-outcome state; broker might have executed it, so do NOT assume failure and do NOT auto-retry!
-                if (c.status === 'DISPATCHED') {
+                if (c.status === 'DISPATCHED' || c.status === 'SUBMITTED') {
                   c.status = 'UNRESOLVED';
                   c.failureReason = 'Server restarted while command was in flight with broker';
                   c.updatedAt = now;
-                } else if (c.status === 'PENDING' && (now - c.createdAt > this.safetyConfig.maxQuoteAgeSeconds * 1000)) {
+                } else if ((c.status === 'PENDING' || c.status === 'REQUESTED') && (now - c.createdAt > this.safetyConfig.maxQuoteAgeSeconds * 1000)) {
                   c.status = 'CANCELLED';
                   c.failureReason = 'Command quote expired during server restart';
                   c.updatedAt = now;
@@ -334,7 +339,7 @@ export class MT5BridgeService {
   public checkCommandTimeouts(now: number = Date.now()): number {
     let timedOutCount = 0;
     for (const cmd of this.commands.values()) {
-      if (cmd.status === 'DISPATCHED' && (now - cmd.updatedAt > this.dispatchTimeoutMs)) {
+      if ((cmd.status === 'DISPATCHED' || cmd.status === 'SUBMITTED') && (now - cmd.updatedAt > this.dispatchTimeoutMs)) {
         cmd.status = 'UNRESOLVED';
         cmd.failureReason = `Command timed out after ${Math.round(this.dispatchTimeoutMs / 1000)}s without broker confirmation; outcome uncertain.`;
         cmd.updatedAt = now;
@@ -1261,7 +1266,72 @@ export class MT5BridgeService {
       return { success: true, message: 'CANCELLED' };
     }
 
-    // 3. Handle Non-FILLED Results (REJECTED or FAILED)
+    // 3. Handle ACKNOWLEDGED state from broker
+    if ((result.status as string) === 'ACKNOWLEDGED') {
+      cmd.status = 'ACKNOWLEDGED';
+      cmd.orderTicket = Number(result.orderTicket || result.positionTicket) || undefined;
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+      this.persistCommandsToDisk();
+      return { success: true, message: 'ACKNOWLEDGED' };
+    }
+
+    // 4. Handle PARTIALLY_FILLED state from broker
+    if ((result.status as string) === 'PARTIALLY_FILLED') {
+      cmd.status = 'PARTIALLY_FILLED';
+      cmd.positionTicket = Number(result.positionTicket || result.orderTicket) || undefined;
+      cmd.executionPrice = Number(result.executionPrice) || cmd.price;
+      const stepVol = Number(result.executionPrice !== undefined ? (cmd.volume * 0.5) : cmd.volume);
+      cmd.filledVolume = Number(((cmd.filledVolume || 0) + stepVol).toFixed(2));
+      cmd.retcode = result.retcode;
+      cmd.retcodeDescription = result.retcodeDescription;
+
+      const ticket = cmd.positionTicket;
+      if (ticket && (cmd.action === 'BUY' || cmd.action === 'SELL')) {
+        const tradeId = `mt5_${ticket}`;
+        const existingTrade = targetStorage.getTrade(tradeId);
+        if (existingTrade) {
+          existingTrade.lotSize = cmd.filledVolume;
+          targetStorage.saveTrade(existingTrade);
+        } else {
+          const execP = cmd.executionPrice || cmd.price || 2500;
+          const tradeItem: TradeLedgerItem = {
+            id: tradeId,
+            signalId: cmd.commandId,
+            tradeNumber: (targetStorage.getTrades(1)[0]?.tradeNumber || 0) + 1,
+            date: new Date().toLocaleDateString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            isoTime: new Date().toISOString(),
+            asset: 'XAU/USD',
+            direction: cmd.action === 'BUY' ? 'BUY NOW' : 'SELL NOW',
+            entry: execP,
+            sl: cmd.sl,
+            slPoints: cmd.sl > 0 ? Math.round(Math.abs(execP - cmd.sl) / 0.1) : 0,
+            tp1: cmd.tp,
+            tp1Points: cmd.tp > 0 ? Math.round(Math.abs(cmd.tp - execP) / 0.1) : 0,
+            tp2: cmd.tp,
+            rr: '1:2.0',
+            riskPercent: 1.5,
+            riskAmount: 1.5,
+            lotSize: cmd.filledVolume,
+            confidence: 85,
+            setup: 'GB-V5 Partially Filled Execution',
+            result: 'OPEN',
+            pl: 0,
+            balanceAfterTrade: targetStorage.getCurrentBalance(),
+            notes: `Partially filled ${cmd.filledVolume} lots via MT5 Bridge [Ticket #${ticket}]`,
+            isActive: true,
+            source: 'MT5' as any,
+            brokerPositionTicket: ticket,
+            brokerOrderId: String(result.orderTicket || ticket),
+          };
+          targetStorage.saveTrade(tradeItem);
+        }
+      }
+      this.persistCommandsToDisk();
+      return { success: true, message: 'PARTIALLY_FILLED' };
+    }
+
+    // 5. Handle Non-FILLED Results (REJECTED or FAILED)
     if (result.status !== 'FILLED') {
       cmd.status = result.status;
       cmd.retcode = result.retcode;
@@ -1292,7 +1362,7 @@ export class MT5BridgeService {
       return { success: true, message: 'COMMAND_REJECTED' };
     }
 
-    // 4. Handle FILLED Results by Action
+    // 6. Handle FILLED Results by Action
     if (cmd.action === 'BUY' || cmd.action === 'SELL') {
       const ticket = Number(result.positionTicket || result.orderTicket);
       const execPrice = Number(result.executionPrice !== undefined ? result.executionPrice : cmd.price);
@@ -1550,6 +1620,140 @@ export class MT5BridgeService {
     this.persistCommandsToDisk();
     console.log(`[MT5Bridge] Cancel order queued for ticket #${ticket} [Command: ${commandId}]`);
     return { success: true, commandId };
+  }
+
+  /**
+   * Reconciles an UNRESOLVED or SUBMITTED command against open MT5 positions and trade ledger.
+   * Prevents creating duplicate orders on retry.
+   */
+  public reconcileUnresolvedCommand(
+    commandId: string,
+    options?: { targetStorage?: PersistentStorage }
+  ): { reconciled: boolean; status: MT5CommandStatus; message?: string } {
+    const cmd = this.commands.get(commandId);
+    if (!cmd) {
+      return { reconciled: false, status: 'FAILED', message: 'Command not found' };
+    }
+
+    if (cmd.status !== 'UNRESOLVED' && cmd.status !== 'SUBMITTED' && cmd.status !== 'DISPATCHED') {
+      return { reconciled: false, status: cmd.status, message: 'Command is not in an unresolved state' };
+    }
+
+    const storageTarget = options?.targetStorage || storage;
+
+    // 1. Check open positions reported by MT5 terminal
+    for (const pos of this.openPositions.values()) {
+      const matchTicket = cmd.positionTicket === pos.ticket || cmd.orderTicket === pos.ticket || cmd.ticket === pos.ticket;
+      const matchMagicAndSymbol = pos.magic === cmd.magic && pos.symbol.toUpperCase() === cmd.symbol.toUpperCase();
+      const matchTime = Math.abs((pos.time * (pos.time < 1e11 ? 1000 : 1)) - cmd.createdAt) < 300000;
+
+      if (matchTicket || (matchMagicAndSymbol && matchTime)) {
+        cmd.status = 'FILLED';
+        cmd.positionTicket = pos.ticket;
+        cmd.executionPrice = pos.priceOpen;
+        cmd.updatedAt = Date.now();
+        cmd.failureReason = undefined;
+
+        // Ensure trade exists in ledger
+        const tradeId = `mt5_${pos.ticket}`;
+        const existingTrade = storageTarget.getTrade(tradeId);
+        if (!existingTrade && (cmd.action === 'BUY' || cmd.action === 'SELL')) {
+          const sl = Number.isFinite(cmd.sl) ? cmd.sl : pos.sl;
+          const tp1 = Number.isFinite(cmd.tp) ? cmd.tp : pos.tp;
+          const slPoints = sl > 0 ? Math.round(Math.abs(pos.priceOpen - sl) / 0.1) : 0;
+          const tp1Points = tp1 > 0 ? Math.round(Math.abs(tp1 - pos.priceOpen) / 0.1) : 0;
+
+          const tradeItem: TradeLedgerItem = {
+            id: tradeId,
+            signalId: cmd.commandId,
+            tradeNumber: (storageTarget.getTrades(1)[0]?.tradeNumber || 0) + 1,
+            date: new Date().toLocaleDateString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+            isoTime: new Date().toISOString(),
+            asset: 'XAU/USD',
+            direction: pos.type === 'BUY' ? 'BUY NOW' : 'SELL NOW',
+            entry: pos.priceOpen,
+            sl,
+            slPoints,
+            tp1,
+            tp1Points,
+            tp2: tp1,
+            rr: tp1Points > 0 && slPoints > 0 ? `1:${(tp1Points / slPoints).toFixed(1)}` : '1:2.0',
+            riskPercent: 1.5,
+            riskAmount: 1.5,
+            lotSize: pos.volume,
+            confidence: 85,
+            setup: 'GB-V5 Reconciled Execution',
+            result: 'OPEN',
+            pl: pos.profit,
+            balanceAfterTrade: storageTarget.getCurrentBalance(),
+            notes: `Reconciled from MT5 Position #${pos.ticket} after UNRESOLVED status`,
+            isActive: true,
+            source: 'MT5' as any,
+            brokerPositionTicket: pos.ticket,
+            brokerOrderId: String(pos.ticket),
+          };
+          storageTarget.saveTrade(tradeItem);
+        }
+
+        this.persistCommandsToDisk();
+        console.log(`[MT5Bridge] UNRESOLVED Command ${commandId} successfully reconciled to FILLED via open position #${pos.ticket}.`);
+        return { reconciled: true, status: 'FILLED', message: 'Reconciled to FILLED via open position' };
+      }
+    }
+
+    // 2. Check if trade is already settled or recorded in ledger
+    const existingLedgerTrade = storageTarget.getTrades().find(
+      (t) => t.signalId === cmd.commandId || (cmd.positionTicket && t.brokerPositionTicket === cmd.positionTicket)
+    );
+    if (existingLedgerTrade) {
+      cmd.status = 'FILLED';
+      cmd.updatedAt = Date.now();
+      cmd.failureReason = undefined;
+      this.persistCommandsToDisk();
+      return { reconciled: true, status: 'FILLED', message: 'Reconciled via trade ledger' };
+    }
+
+    return { reconciled: false, status: cmd.status, message: 'Unresolved outcome not yet confirmed by broker' };
+  }
+
+  /**
+   * Safely retries a command ONLY after verifying it was not already executed by broker.
+   * Prevents duplicate orders.
+   */
+  public retryCommand(
+    commandId: string,
+    options?: { targetStorage?: PersistentStorage }
+  ): { success: boolean; commandId?: string; reason?: string; status?: MT5CommandStatus } {
+    const cmd = this.commands.get(commandId);
+    if (!cmd) {
+      return { success: false, reason: 'Command not found' };
+    }
+
+    // Reconcile before any retry attempt to prevent duplicate order submission
+    const rec = this.reconcileUnresolvedCommand(commandId, options);
+    if (rec.reconciled || cmd.status === 'FILLED' || cmd.status === 'ACKNOWLEDGED' || cmd.status === 'PARTIALLY_FILLED') {
+      return {
+        success: false,
+        reason: `لا يمكن إعادة محاولة الأمر: تم إثبات تنفيذ الأمر لدى الوسيط بحالة (${cmd.status}).`,
+        status: cmd.status,
+      };
+    }
+
+    if (cmd.retryCount >= cmd.maxRetries) {
+      return {
+        success: false,
+        reason: `تم التوقف: تجاوز الحد الأقصى للمحاولات (${cmd.maxRetries}).`,
+        status: cmd.status,
+      };
+    }
+
+    cmd.retryCount += 1;
+    cmd.status = 'REQUESTED';
+    cmd.updatedAt = Date.now();
+    cmd.failureReason = undefined;
+    this.persistCommandsToDisk();
+    console.log(`[MT5Bridge] Command ${commandId} safely queued for retry ${cmd.retryCount}/${cmd.maxRetries}`);
+    return { success: true, commandId, status: 'REQUESTED' };
   }
 
   // =========================================================================

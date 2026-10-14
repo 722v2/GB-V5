@@ -530,6 +530,26 @@ export const BacktestView: React.FC<BacktestViewProps> = ({ currentCapital }) =>
             </div>
           </div>
 
+          {/* Execution Assumptions & Real Cost Modeling Disclosure */}
+          {results.executionAssumptions && (
+            <div className="bg-stone-900/50 border border-stone-800/80 rounded-xl p-3.5 space-y-1.5 text-xs">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-stone-300 font-semibold text-[11px]">
+                <span className="flex items-center gap-1.5 text-amber-400 font-sans">
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  نموذج التنفيذ وتكاليف السبريد (Execution Assumptions & Realistic Costs)
+                </span>
+                <span className="font-mono text-[10px] text-stone-400">
+                  سبريد الصفقة: ${results.executionAssumptions.spreadDollars.toFixed(2)} | إجمالي تكلفة السبريد: ${results.totalSpreadCost?.toFixed(2) || '0.00'} | صفقات مكررة محجوبة: {results.duplicateSetupsSuppressed || 0}
+                </span>
+              </div>
+              <ul className="text-[11px] text-stone-400 font-sans space-y-0.5 list-disc list-inside">
+                {results.executionAssumptions.disclosures.map((d, idx) => (
+                  <li key={idx}>{d}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Equity Curve Visual Graph */}
           <div className="bg-stone-900/80 border border-stone-800/80 rounded-2xl p-5">
             <div className="flex items-center justify-between mb-4">

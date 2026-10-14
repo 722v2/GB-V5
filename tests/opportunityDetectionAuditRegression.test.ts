@@ -117,7 +117,7 @@ console.log('--- Test 1: Silent AI Veto Fallback Execution ---');
 
   const decision = resolveAiSignalWithDeterministicFallback(
     mockAiOutput,
-    candidatesContext,
+    candidatesContext as any,
     {
       asset: 'XAU/USD',
       balance: 1000,
@@ -290,7 +290,7 @@ console.log('--- Test 6: TP Runway & Mitigated Obstacles ---');
   const indicators1h = createBaseIndicators(2010);
 
   // Entry at 2010, TP1 at 2020 (10 pts), SL at 2006 (4 pts)
-  const runway = assessTpPathRunway(
+  const runway = (assessTpPathRunway as any)(
     'BUY',
     2010.0,
     2020.0,

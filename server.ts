@@ -1083,6 +1083,132 @@ async function startServer() {
     }
   });
 
+  // =========================================================================
+  // Phase 5B: User-Confirmed Trade Lifecycle in Analysis Mode
+  // =========================================================================
+
+  // User confirms entering a trade generated from a signal
+  app.post('/api/signals/:id/confirm-entry', verifyAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { actualEntry, lotSize, riskPercent, notes } = req.body || {};
+      const result = storage.confirmSignalEntry({
+        signalId: id,
+        actualEntry: typeof actualEntry === 'number' ? actualEntry : undefined,
+        lotSize: typeof lotSize === 'number' ? lotSize : undefined,
+        riskPercent: typeof riskPercent === 'number' ? riskPercent : undefined,
+        notes,
+      });
+
+      if (!result.success) {
+        return res.status(404).json({ success: false, error: result.message });
+      }
+
+      const trades = storage.getTrades(50);
+      const dailyStats = storage.getTodayStats();
+      res.json({
+        success: true,
+        isDuplicate: result.isDuplicate,
+        trade: result.trade,
+        signal: result.signal,
+        message: result.message,
+        trades,
+        dailyStats,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // User confirms they did NOT enter a generated signal
+  app.post('/api/signals/:id/not-entered', verifyAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const result = storage.markSignalOrOpportunityNotEntered(id);
+      const trades = storage.getTrades(50);
+      const dailyStats = storage.getTodayStats();
+      res.json({
+        success: true,
+        message: 'Signal marked as not entered (NOT ENTERED)',
+        signal: result.signal,
+        opportunity: result.opportunity,
+        trades,
+        dailyStats,
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // User applies a proposed trade management recommendation (e.g. SL Trailing or TP Extension)
+  app.post('/api/trades/:id/apply-recommendation', verifyAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { actionType } = req.body || {};
+      const result = storage.applyManagementRecommendation(id, actionType);
+      if (!result.success) {
+        return res.status(400).json({ success: false, error: result.message });
+      }
+      res.json({
+        success: true,
+        trade: result.trade,
+        message: result.message,
+        trades: storage.getTrades(50),
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  // User manually closes an Analysis Mode trade with authoritative outcome & realized P/L
+  app.post('/api/trades/:id/close-user-trade', verifyAdminAuth, async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { outcome, exitPrice, realizedPnl, closeReason } = req.body || {};
+      const trades = storage.getTrades(300);
+      const trade = trades.find((t) => t.id === id);
+      if (!trade) {
+        return res.status(404).json({ success: false, error: 'Trade not found in ledger' });
+      }
+
+      const pnlNum = typeof realizedPnl === 'number' && !isNaN(realizedPnl) ? realizedPnl : 0;
+      const resolvedOutcome = outcome === 'WIN' || outcome === 'LOSS' || outcome === 'BREAK_EVEN'
+        ? outcome
+        : (pnlNum >= 0 ? 'WIN' : 'LOSS');
+      const resolvedExitPrice = typeof exitPrice === 'number' ? exitPrice : (trade.exitPrice || trade.entry);
+
+      const outcomeRecord: any = {
+        signalId: trade.signalId || trade.id,
+        tradeId: trade.id,
+        direction: trade.direction,
+        orderType: 'MARKET',
+        entry: trade.entry,
+        stopLoss: trade.sl,
+        tp1: trade.tp1,
+        tp2: trade.tp2,
+        outcome: resolvedOutcome,
+        realizedPnl: pnlNum,
+        pl: pnlNum,
+        exitPrice: resolvedExitPrice,
+        source: 'MANUAL',
+        closedAt: Date.now(),
+        closeReason: closeReason || 'MANUAL_USER_CLOSE',
+        timestamp: Date.now(),
+        isoTime: new Date().toISOString(),
+      };
+
+      const outcomeRes = await storage.recordTradeOutcomeAsync(outcomeRecord);
+      res.json({
+        success: outcomeRes.success,
+        trade: outcomeRes.trade || trade,
+        trades: storage.getTrades(50),
+        dailyStats: storage.getTodayStats(),
+      });
+    } catch (error: any) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
   // Trade Ledger Endpoints (Real Trade & Simulation Ledger)
   app.get('/api/trades', (req, res) => {
     try {

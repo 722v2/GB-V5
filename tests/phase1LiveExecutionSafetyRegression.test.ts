@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mt5Bridge } from '../server/mt5Bridge.js';
+import { MT5BridgeService } from '../server/mt5Bridge.js';
 
 /**
  * ============================================================================
@@ -22,6 +22,9 @@ async function runPhase1LiveExecutionSafetyRegressionTests() {
   console.log('========================================================================');
   console.log('🧪 RUNNING PHASE 1 REGRESSION SUITE: LIVE/REAL EXECUTION SAFETY GATE');
   console.log('========================================================================\n');
+
+  // Dedicated MT5BridgeService instance configured for strict test isolation
+  const mt5Bridge = new MT5BridgeService({ isIsolatedTest: true });
 
   const origEnvConfig = process.env.MT5_LIVE_EXECUTION_ENABLED;
 

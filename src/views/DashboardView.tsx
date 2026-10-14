@@ -23,7 +23,7 @@ import {
   ShieldCheck,
   Lock,
 } from 'lucide-react';
-import { Candle, ScannerConfig, TradeSignal, AppSettings, MT5AccountInfo } from '../types';
+import { Candle, ScannerConfig, TradeSignal, AppSettings, MT5AccountInfo, AccountStats } from '../types';
 import { MiniChart } from '../components/MiniChart';
 
 interface DashboardViewProps {
@@ -33,7 +33,7 @@ interface DashboardViewProps {
   currentPrice?: number;
   prevPrice?: number;
   marketMetrics?: any;
-  stats?: any;
+  stats?: AccountStats;
   currentBalance?: number;
   settings?: AppSettings;
   activeCapital?: number;
@@ -86,6 +86,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activeCapital,
   mt5Account,
   currentBalance,
+  stats,
 }) => {
   const [showFullAnalysis, setShowFullAnalysis] = useState<boolean>(false);
 
@@ -257,6 +258,76 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </div>
           </div>
         )}
+      </section>
+
+      {/* ================================================== */}
+      {/* 0.5. PHASE 5B: USER TRADE TRACKING & SIGNAL ANALYTICS */}
+      {/* ================================================== */}
+      <section className="bg-stone-900/90 border border-stone-800/90 rounded-2xl p-3.5 sm:p-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-3 border-b border-stone-800/80">
+          <div className="flex items-center gap-2">
+            <Layers className="w-4 h-4 text-cyan-400" />
+            <h3 className="text-xs sm:text-sm font-black text-stone-100 uppercase tracking-wider font-mono">
+              تتبع صفقات المستخدم وإحصائيات الإشارات (User Trade Tracking & Signals)
+            </h3>
+          </div>
+          <span className="text-[10px] sm:text-xs font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/30">
+            SEPARATE ANALYTICS
+          </span>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3 font-mono">
+          {/* 1. SIGNALS GENERATED */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-2.5 sm:p-3">
+            <span className="text-[10px] text-stone-400 uppercase block">إشارات مولدة</span>
+            <span className="text-base sm:text-lg font-black text-stone-100 block mt-0.5">
+              {stats?.signalsGenerated ?? stats?.totalSignals ?? 0}
+            </span>
+            <span className="text-[9px] text-stone-400 block mt-0.5">إجمالي الإشارات</span>
+          </div>
+
+          {/* 2. SIGNALS NOT ENTERED */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-2.5 sm:p-3">
+            <span className="text-[10px] text-stone-400 uppercase block">لم يتم الدخول</span>
+            <span className="text-base sm:text-lg font-black text-stone-400 block mt-0.5">
+              {stats?.signalsNotEntered ?? 0}
+            </span>
+            <span className="text-[9px] text-stone-400 block mt-0.5">تجاهلها المستخدم</span>
+          </div>
+
+          {/* 3. USER TRADES ENTERED */}
+          <div className="bg-stone-950/80 border border-cyan-500/40 rounded-xl p-2.5 sm:p-3">
+            <span className="text-[10px] text-cyan-400 uppercase block">صفقات مؤكدة</span>
+            <span className="text-base sm:text-lg font-black text-cyan-300 block mt-0.5">
+              {stats?.userTradesEntered ?? 0}
+            </span>
+            <span className="text-[9px] text-stone-400 block mt-0.5">
+              فوز: {stats?.userTradesWon ?? 0} | خسارة: {stats?.userTradesLost ?? 0}
+            </span>
+          </div>
+
+          {/* 4. USER REALIZED P/L */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-2.5 sm:p-3">
+            <span className="text-[10px] text-stone-400 uppercase block">أرباح المستخدم الفعلية</span>
+            <span className={`text-base sm:text-lg font-black block mt-0.5 ${
+              (stats?.userTradesPl ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'
+            }`}>
+              {(stats?.userTradesPl ?? 0) >= 0 ? `+$${(stats?.userTradesPl ?? 0).toFixed(2)}` : `-$${Math.abs(stats?.userTradesPl ?? 0).toFixed(2)}`}
+            </span>
+            <span className="text-[9px] text-stone-400 block mt-0.5">P&L معتمد يدوياً</span>
+          </div>
+
+          {/* 5. MT5 AUTOMATED TRADES */}
+          <div className="bg-stone-950/80 border border-stone-800 rounded-xl p-2.5 sm:p-3 col-span-2 sm:col-span-1">
+            <span className="text-[10px] text-stone-400 uppercase block">صفقات MT5 الآلية</span>
+            <span className="text-base sm:text-lg font-black text-amber-300 block mt-0.5">
+              {stats?.mt5TradesExecuted ?? 0}
+            </span>
+            <span className="text-[9px] text-stone-400 block mt-0.5">
+              P&L: {(stats?.mt5TradesPl ?? 0) >= 0 ? `+$${(stats?.mt5TradesPl ?? 0).toFixed(2)}` : `-$${Math.abs(stats?.mt5TradesPl ?? 0).toFixed(2)}`}
+            </span>
+          </div>
+        </div>
       </section>
 
       {/* ================================================== */}

@@ -70,6 +70,8 @@ export interface BacktestTrade {
   finalAverageEntry?: number;
   combinedRisk?: number;
   addonUsed?: boolean;
+  grossPl?: number;
+  spreadCost?: number;
 }
 
 export interface BacktestSummary {
@@ -122,6 +124,14 @@ export interface BacktestSummary {
   trades: BacktestTrade[];
   equityCurve: { time: string; timestamp: number; balance: number }[];
   validationReport?: HistoricalDataValidationReport;
+  totalSpreadCost?: number;
+  duplicateSetupsSuppressed?: number;
+  executionAssumptions?: {
+    spreadDollars: number;
+    slippageDollars: number;
+    executionModel: string;
+    disclosures: string[];
+  };
 }
 
 function parseBiquoteBars(bars: any[]): Candle[] {
@@ -237,6 +247,12 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
   let maxBufferUsed = 0;
   let sumBufferUsed = 0;
 
+  const spreadDollars = typeof request.brokerSpecs?.spread === 'number' && request.brokerSpecs.spread >= 0
+    ? request.brokerSpecs.spread
+    : 0.15;
+  let accumulatedSpreadCost = 0;
+  let duplicateSetupsSuppressedCount = 0;
+
   const trades: BacktestTrade[] = [];
   const dailyTradeCounts: Record<string, number> = {};
   const dailyRiskTaken: Record<string, number> = {};
@@ -334,6 +350,10 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
     const maxSlConfigured = request.brokerSpecs?.maxGoldSlPoints ?? 85;
 
     // 0. Primary GB-V5 Brain Canonical Candidate Discovery (M1 Primary with M5/M15/H1 context)
+    const configuredMinConfidence = typeof request.brokerSpecs?.minimumConfidence === 'number'
+      ? request.brokerSpecs.minimumConfidence
+      : undefined;
+
     const history1m = candles1m.filter((c) => c.timestamp + 60 * 1000 <= evalTimestamp);
     if (history1m.length >= 30) {
       try {
@@ -360,11 +380,18 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
             minRr: request.brokerSpecs?.minRr ?? 1.5,
             maxLoss: request.brokerSpecs?.maxLoss ?? 5.5,
           },
-          minConfidence: 75,
+          minConfidence: configuredMinConfidence,
+          currentSpread: spreadDollars,
         });
 
         if (brainRes.candidates.length > 0) {
-          const topCand = brainRes.candidates[0];
+          // Standard GB-V5 candidate quality ranking: confidence, confluence score, R:R
+          const sortedCandidates = [...brainRes.candidates].sort((a, b) => {
+            if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+            if (b.confluenceScore !== a.confluenceScore) return b.confluenceScore - a.confluenceScore;
+            return (b.tp1Rr || 0) - (a.tp1Rr || 0);
+          });
+          const topCand = sortedCandidates[0];
           candidateSignal = {
             decision: topCand.direction === 'BUY'
               ? (topCand.orderType === 'LIMIT' ? 'BUY LIMIT' : 'BUY NOW')
@@ -593,6 +620,22 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
     // If no valid signal, continue
     if (!candidateSignal) continue;
 
+    // Duplicate Setup / Duplicate Trade Suppression (within cooldown window and same price structure)
+    const lastTrade = trades[trades.length - 1];
+    if (lastTrade) {
+      const timeSinceLastExit = evalTimestamp - lastTrade.exitTimestamp;
+      if (
+        timeSinceLastExit >= 0 &&
+        timeSinceLastExit < 15 * 60 * 1000 &&
+        candidateSignal.setup === lastTrade.setup &&
+        candidateSignal.decision.includes(lastTrade.direction) &&
+        Math.abs(candidateSignal.entry - lastTrade.entryPrice) < 0.30
+      ) {
+        duplicateSetupsSuppressedCount += 1;
+        continue;
+      }
+    }
+
     // FEATURE 2: TECHNICAL SL AND BUFFER
     const technicalSL = candidateSignal.stopLoss;
     const technicalSlDistance = Math.abs(candidateSignal.entry - technicalSL);
@@ -738,6 +781,40 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
 
       // SAME-CANDLE CONFLICT HANDLING
       if (touchedSl && (touchedTp1 || touchedTp2)) {
+        // Chronologically evaluate 1M candles within this 5M bar window to determine which was reached first
+        const barEndTs = futureBar.timestamp + 5 * 60 * 1000;
+        const sub1m = candles1m.filter(
+          (c) => c.timestamp >= futureBar.timestamp && c.timestamp < barEndTs
+        );
+
+        let resolvedViaM1 = false;
+        if (sub1m.length > 0) {
+          for (const m1 of sub1m) {
+            const m1HitSl = isBuy ? m1.low <= candidateSignal.stopLoss : m1.high >= candidateSignal.stopLoss;
+            const m1HitTp = isBuy ? m1.high >= candidateSignal.tp1 : m1.low <= candidateSignal.tp1;
+
+            if (m1HitSl && !m1HitTp) {
+              exitIndex = j;
+              exitPrice = candidateSignal.stopLoss;
+              exitReason = 'STOP_LOSS';
+              resolvedViaM1 = true;
+              break;
+            }
+            if (m1HitTp && !m1HitSl) {
+              exitIndex = j;
+              exitPrice = candidateSignal.tp1;
+              exitReason = 'TP1';
+              resolvedViaM1 = true;
+              break;
+            }
+          }
+        }
+
+        if (resolvedViaM1) {
+          break;
+        }
+
+        // Conservative fail-safe: never assume favorable outcome
         if (isBuy) {
           if (futureBar.open <= candidateSignal.stopLoss) {
             exitIndex = j;
@@ -859,7 +936,7 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
       continue;
     }
 
-    // Calculate P/L based on exact combined positions and their actual entry prices
+    // Calculate P/L based on exact combined positions and realistic spread modeling
     const exitBar = candles5m[exitIndex];
 
     let initialPl = 0;
@@ -878,9 +955,13 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
       }
     }
 
-    const profitDollars = Number((initialPl + addonPl).toFixed(2));
     const combinedRiskDollars = Number((initialRiskDollars + addonRiskDollars).toFixed(4));
     const combinedLot = Number((initialLot + addonLot).toFixed(6));
+    const grossPlDollars = Number((initialPl + addonPl).toFixed(2));
+    const tradeSpreadCost = Number((combinedLot * spreadDollars * 100).toFixed(2));
+    const profitDollars = Number((grossPlDollars - tradeSpreadCost).toFixed(2));
+    accumulatedSpreadCost += tradeSpreadCost;
+
     const finalAverageEntry = addonUsed
       ? Number((((initialLot * initialEntry) + (addonLot * addonEntry)) / combinedLot).toFixed(2))
       : initialEntry;
@@ -950,6 +1031,8 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
       lotSize: combinedLot,
       result: tradeResult,
       pl: profitDollars,
+      grossPl: grossPlDollars,
+      spreadCost: tradeSpreadCost,
       balanceBefore,
       balanceAfter: runningBalance,
       rrRatio: candidateSignal.realRR,
@@ -1078,5 +1161,18 @@ export async function runXauusdBacktest(request: BacktestRequest): Promise<Backt
     trades,
     equityCurve,
     validationReport: validation,
+    totalSpreadCost: Number(accumulatedSpreadCost.toFixed(2)),
+    duplicateSetupsSuppressed: duplicateSetupsSuppressedCount,
+    executionAssumptions: {
+      spreadDollars,
+      slippageDollars: 0,
+      executionModel: 'STRICT_DETERMINISTIC_CLOSED_CANDLE',
+      disclosures: [
+        'Chronological closed-candle simulation with strict zero-lookahead boundary.',
+        `Realistic fixed spread of $${spreadDollars.toFixed(2)} modeled on each trade transaction.`,
+        'Same-candle conflict resolution uses chronological M1 candles when available, or conservative fail-safe (never assumes favorable outcome).',
+        'Tick-level intra-second slippage during high-impact news cannot be reliably modeled without tick L2 orderbook feeds and is excluded.',
+      ],
+    },
   };
 }

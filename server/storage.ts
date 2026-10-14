@@ -128,6 +128,19 @@ export interface DashboardStatsResult {
   lastScanStatus: string;
   scannerHealth: string;
   todayStats: DailyTradeStats;
+  // Phase 5B Separate Analytics
+  signalsGenerated: number;
+  signalsNotEntered: number;
+  userTradesEntered: number;
+  userTradesWon: number;
+  userTradesLost: number;
+  userTradesPl: number;
+  mt5TradesExecuted: number;
+  mt5TradesWon: number;
+  mt5TradesLost: number;
+  mt5TradesPl: number;
+  userReportedPnl: number;
+  brokerConfirmedPnl: number;
 }
 
 
@@ -271,7 +284,7 @@ export class PersistentStorage {
   public readonly isIsolatedTest: boolean;
   private telegramNotifier: ITelegramNotifier;
 
-  constructor(options?: { isIsolatedTest?: boolean; isProductionStorage?: boolean; telegramNotifier?: ITelegramNotifier }) {
+  constructor(options?: { isIsolatedTest?: boolean; isProductionStorage?: boolean; telegramNotifier?: ITelegramNotifier; storageFilePath?: string; outcomesFilePath?: string }) {
     this.isIsolatedTest = Boolean(options?.isIsolatedTest);
     this.isProductionStorage = options?.isProductionStorage ?? true;
     this.telegramNotifier = options?.telegramNotifier || (this.isProductionStorage ? new LiveTelegramNotifier() : new NullTelegramNotifier());
@@ -1352,7 +1365,7 @@ export class PersistentStorage {
   // =========================================================================
   public saveTrade(trade: TradeLedgerItem): TradeLedgerItem[] {
     try {
-      const isTest = this.isProductionStorage && (isSyntheticTestRecord(trade) || this.isTesting);
+      const isTest = isSyntheticTestRecord(trade) || (this.isProductionStorage && this.isTesting);
       const isResultOpen = trade.result === 'OPEN';
       const targetList = isTest ? this.inMemoryTestTrades : this.inMemoryTrades;
       const highestNum = Math.max(0, ...targetList.map((t) => t.tradeNumber || 0));
@@ -2054,6 +2067,28 @@ export class PersistentStorage {
 
     const todayStats = this.getTodayStats();
 
+    // Phase 5B Separate Analytics Metrics
+    const signalsGenerated = this.inMemorySignals.length;
+    const notEnteredSignalIds = new Set<string>();
+    this.inMemorySignals.filter((s) => s.lifecycleState === 'NOT_ENTERED').forEach((s) => notEnteredSignalIds.add(s.id));
+    this.inMemoryOutcomes.filter((o) => o.outcome === 'NOT_ENTERED').forEach((o) => {
+      if (o.signalId) notEnteredSignalIds.add(o.signalId);
+      else if (o.tradeId) notEnteredSignalIds.add(o.tradeId);
+    });
+    const signalsNotEntered = notEnteredSignalIds.size;
+
+    const manualTrades = this.inMemoryTrades.filter((t) => (t.source === 'MANUAL' || !t.source) && t.result !== 'NOT_ENTERED');
+    const userTradesEntered = manualTrades.length;
+    const userTradesWon = manualTrades.filter((t) => t.result === 'WIN').length;
+    const userTradesLost = manualTrades.filter((t) => t.result === 'LOSS').length;
+    const userTradesPl = Number(manualTrades.filter((t) => t.result === 'WIN' || t.result === 'LOSS').reduce((acc, t) => acc + (t.pl || 0), 0).toFixed(2));
+
+    const mt5Trades = this.inMemoryTrades.filter((t) => t.source === 'MT5' && t.result !== 'NOT_ENTERED');
+    const mt5TradesExecuted = mt5Trades.length;
+    const mt5TradesWon = mt5Trades.filter((t) => t.result === 'WIN').length;
+    const mt5TradesLost = mt5Trades.filter((t) => t.result === 'LOSS').length;
+    const mt5TradesPl = Number(mt5Trades.filter((t) => t.result === 'WIN' || t.result === 'LOSS').reduce((acc, t) => acc + (t.pl || 0), 0).toFixed(2));
+
     return {
       totalScans: this.inMemoryScans.length,
       totalSignals: this.inMemorySignals.length,
@@ -2074,6 +2109,19 @@ export class PersistentStorage {
       lastScanStatus: this.lastScannerStatus,
       scannerHealth: 'HEALTHY',
       todayStats,
+      // Phase 5B Separate Analytics
+      signalsGenerated,
+      signalsNotEntered,
+      userTradesEntered,
+      userTradesWon,
+      userTradesLost,
+      userTradesPl,
+      mt5TradesExecuted,
+      mt5TradesWon,
+      mt5TradesLost,
+      mt5TradesPl,
+      userReportedPnl: userTradesPl,
+      brokerConfirmedPnl: mt5TradesPl,
     };
   }
 
@@ -2711,6 +2759,143 @@ export class PersistentStorage {
 
     this.syncJsonBackups();
     return { success: true, signal: updatedSignal, opportunity: updatedOpp };
+  }
+
+  // =========================================================================
+  // Phase 5B: User-Confirmed Trade Lifecycle in Analysis Mode
+  // =========================================================================
+  public confirmSignalEntry(params: {
+    signalId: string;
+    actualEntry?: number;
+    lotSize?: number;
+    riskPercent?: number;
+    notes?: string;
+  }): {
+    success: boolean;
+    isDuplicate: boolean;
+    trade?: TradeLedgerItem;
+    signal?: TradeSignal;
+    message?: string;
+  } {
+    const { signalId, actualEntry, lotSize, riskPercent, notes } = params;
+    const signal = this.getSignal(signalId) || this.inMemorySignals.find((s) => s.id === signalId);
+    if (!signal) {
+      return { success: false, isDuplicate: false, message: 'Signal not found' };
+    }
+
+    const allTrades = [...this.inMemoryTrades, ...this.inMemoryTestTrades];
+    const existingTrade = allTrades.find((t) => t.id === signalId || t.signalId === signalId);
+    if (existingTrade) {
+      return {
+        success: true,
+        isDuplicate: true,
+        trade: existingTrade,
+        signal,
+        message: 'Trade already entered in ledger',
+      };
+    }
+
+    const resolvedEntry = (typeof actualEntry === 'number' && !isNaN(actualEntry) && actualEntry > 0)
+      ? Number(actualEntry.toFixed(2))
+      : Number(signal.entry);
+    const resolvedSl = Number(signal.stopLoss);
+    const resolvedTp1 = Number(signal.tp1);
+    const resolvedTp2 = (signal.tp2 && Number(signal.tp2) > 0) ? Number(signal.tp2) : undefined;
+    const resolvedLot = (typeof lotSize === 'number' && !isNaN(lotSize) && lotSize > 0)
+      ? Number(lotSize)
+      : (signal.standardLot ?? signal.recommendedLotSize ?? 0.01);
+    const resolvedRiskPercent = (typeof riskPercent === 'number' && !isNaN(riskPercent) && riskPercent > 0)
+      ? Number(riskPercent)
+      : (signal.riskPercent || 15);
+    const resolvedRiskAmount = Number(((this.inMemoryCurrentBalance * resolvedRiskPercent) / 100).toFixed(2));
+    const slPoints = Math.round(Math.abs(resolvedEntry - resolvedSl) / 0.1);
+    const tp1Points = Math.round(Math.abs(resolvedTp1 - resolvedEntry) / 0.1);
+    const tp2Points = resolvedTp2 ? Math.round(Math.abs(resolvedTp2 - resolvedEntry) / 0.1) : undefined;
+
+    const targetList = this.isIsolatedTest ? this.inMemoryTestTrades : this.inMemoryTrades;
+    const highestNum = Math.max(0, ...allTrades.map((t) => t.tradeNumber || 0));
+    const newTrade: TradeLedgerItem = {
+      id: signal.id,
+      signalId: signal.id,
+      tradeNumber: highestNum + 1,
+      date: new Date(signal.timestamp || Date.now()).toLocaleDateString('ar-EG', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+      isoTime: new Date(signal.timestamp || Date.now()).toISOString(),
+      asset: signal.asset || 'XAU/USD',
+      direction: signal.signal as any,
+      entry: resolvedEntry,
+      userEntryPrice: resolvedEntry,
+      sl: resolvedSl,
+      slPoints,
+      tp1: resolvedTp1,
+      tp1Points,
+      tp2: resolvedTp2,
+      tp2Points,
+      lotSize: resolvedLot,
+      riskPercent: resolvedRiskPercent,
+      riskAmount: resolvedRiskAmount,
+      confidence: signal.confidence || 75,
+      setup: signal.setup || 'Analysis Mode Confirmed Trade',
+      rr: signal.rr || '1:1.5',
+      result: 'OPEN',
+      isActive: true,
+      pl: 0,
+      balanceAfterTrade: this.inMemoryCurrentBalance,
+      source: 'MANUAL',
+      notes: notes || (actualEntry && actualEntry !== signal.entry
+        ? `دخول مؤكد يدوياً بسعر فعلي $${resolvedEntry.toFixed(2)} (سعر الإشارة: $${Number(signal.entry).toFixed(2)})`
+        : 'تم تأكيد الدخول في وضع التحليل (Analysis Mode Confirmed)'),
+    };
+
+    signal.lifecycleState = 'ENTERED';
+    this.saveSignal(signal);
+    this.saveTrade(newTrade);
+
+    return {
+      success: true,
+      isDuplicate: false,
+      trade: newTrade,
+      signal,
+      message: 'Trade confirmed and entered into ledger successfully',
+    };
+  }
+
+  public applyManagementRecommendation(
+    tradeId: string,
+    actionType?: string
+  ): { success: boolean; trade?: TradeLedgerItem; message?: string } {
+    const allTrades = [...this.inMemoryTrades, ...this.inMemoryTestTrades];
+    const trade = allTrades.find((t) => t.id === tradeId || t.signalId === tradeId);
+    if (!trade) {
+      return { success: false, message: 'Trade not found in ledger' };
+    }
+    if (trade.result !== 'OPEN') {
+      return { success: false, message: 'Cannot apply recommendation to a closed trade' };
+    }
+
+    let modified = false;
+    if (trade.suggestedSL !== undefined && trade.suggestedSL > 0) {
+      trade.sl = trade.suggestedSL;
+      modified = true;
+    }
+    if (trade.suggestedTP2 !== undefined && trade.suggestedTP2 > 0) {
+      trade.tp2 = trade.suggestedTP2;
+      modified = true;
+    }
+
+    if (modified) {
+      trade.isRecommendationApplied = true;
+      trade.notes = (trade.notes ? `${trade.notes} | ` : '') +
+        `Applied Management Recommendation (${actionType || trade.lastManagementAction || 'ADJUST'}) [SL: $${trade.sl}, TP2: ${trade.tp2 || 'N/A'}]`;
+      this.saveTrade(trade);
+      return { success: true, trade, message: 'Management recommendation applied successfully' };
+    }
+
+    return { success: false, trade, message: 'No pending suggested SL or TP2 found on trade' };
   }
 
   public async clearAllTrades(): Promise<TradeLedgerItem[]> {

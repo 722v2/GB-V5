@@ -203,10 +203,11 @@ export class ExperienceMemoryEngine {
     signal: TradeSignal,
     indicators1h?: TechnicalIndicators,
     indicators15m?: TechnicalIndicators,
-    indicators5m?: TechnicalIndicators
+    indicators5m?: TechnicalIndicators,
+    targetStorage?: any
   ): FactorSnapshot | null {
     try {
-      if (!this.isFeatureEnabled()) return null;
+      if (!this.isFeatureEnabled(targetStorage)) return null;
       if (!signal || !signal.id || signal.signal === 'NO TRADE') return null;
 
       const factors = this.normalizeFactors({
@@ -227,7 +228,8 @@ export class ExperienceMemoryEngine {
         createdAt: signal.timestamp || Date.now(),
       };
 
-      storage.saveFactorSnapshot(snapshot);
+      (targetStorage || storage).saveFactorSnapshot(snapshot);
+      return snapshot;
       return snapshot;
     } catch (err) {
       console.warn('[ExperienceMemory] Error capturing decision snapshot (failing open):', err);
@@ -242,10 +244,11 @@ export class ExperienceMemoryEngine {
   public recordCompletedOutcome(
     snapshot: FactorSnapshot | null,
     outcomeRecord: TradeOutcomeRecord,
-    trade?: TradeLedgerItem
+    trade?: TradeLedgerItem,
+    targetStorage?: any
   ): ExperienceRecord | null {
     try {
-      if (!this.isFeatureEnabled()) return null;
+      if (!this.isFeatureEnabled(targetStorage)) return null;
       if (!snapshot || !snapshot.combinationKey) {
         // No decision-time snapshot exists. Silently skip for learning.
         return null;
@@ -276,7 +279,7 @@ export class ExperienceMemoryEngine {
         completedAt,
       };
 
-      storage.saveExperienceRecord(record);
+      (targetStorage || storage).saveExperienceRecord(record);
       this.addRecordToIndex(record);
 
       console.log(
@@ -296,15 +299,16 @@ export class ExperienceMemoryEngine {
    */
   public getExperienceContext(
     snapshot: FactorSnapshot | { combinationKey: string; factors: NormalizedFactors; signalId?: string },
-    decisionTime: number = Date.now()
+    decisionTime: number = Date.now(),
+    targetStorage?: any
   ): HistoricalExperienceContext | null {
     try {
-      if (!this.isFeatureEnabled()) return null;
+      if (!this.isFeatureEnabled(targetStorage)) return null;
       if (!snapshot || !snapshot.combinationKey || !snapshot.factors) return null;
 
-      this.ensureIndex();
+      this.ensureIndex(targetStorage);
 
-      const allRecords = storage.getCompletedExperienceRecords();
+      const allRecords = (targetStorage || storage).getCompletedExperienceRecords();
       // Enforce strict completion time barrier and current-signal exclusion
       const eligibleRecords = allRecords.filter(
         (r) => r.completedAt < decisionTime && r.signalId !== (snapshot as any).signalId
@@ -448,10 +452,10 @@ export class ExperienceMemoryEngine {
   /**
    * Rebuilds / maintains in-memory combinationKey index.
    */
-  public ensureIndex(): void {
+  public ensureIndex(targetStorage?: any): void {
     if (this.isIndexInitialized) return;
     this.indexByCombination.clear();
-    const records = storage.getCompletedExperienceRecords();
+    const records = (targetStorage || storage).getCompletedExperienceRecords();
     for (const r of records) {
       this.addRecordToIndex(r);
     }
@@ -468,9 +472,9 @@ export class ExperienceMemoryEngine {
   /**
    * Checks if feature is enabled via AppSettings.
    */
-  public isFeatureEnabled(): boolean {
+  public isFeatureEnabled(targetStorage?: any): boolean {
     try {
-      const settings = storage.getSettings();
+      const settings = (targetStorage || storage).getSettings();
       return (settings as any).enableExperienceMemory !== false;
     } catch {
       return true;

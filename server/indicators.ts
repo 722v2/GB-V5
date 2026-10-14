@@ -1275,15 +1275,17 @@ export function hasConfirmedReversalStructure(
 ): boolean {
   if (direction === 'BUY') {
     // Bullish reversal confirmation
-    // 1. Confirmed M15 / M5 structural shift / BOS / MSS in bullish direction
+    // 1. Confirmed M15 structural shift / BOS / MSS / CHOCH in bullish direction
     const ev15m = indicators15m?.structureEvent;
-    const ev5m = indicators5m?.structureEvent;
-    const isBullEvent =
+    const shift15m = indicators15m?.structureShift;
+    const hasM15BullEvent =
       ev15m === 'BULLISH_MSS_SWEEP' || ev15m === 'BULLISH_CHOCH' || ev15m === 'BULLISH_BOS' ||
-      ev5m === 'BULLISH_MSS_SWEEP' || ev5m === 'BULLISH_CHOCH' || ev5m === 'BULLISH_BOS' ||
+      shift15m === 'CHOCH_BULLISH' || shift15m === 'BULLISH_CHOCH' || shift15m === 'BULLISH_BOS' ||
+      (typeof shift15m === 'string' && (shift15m.includes('Bullish CHOCH') || shift15m.includes('Bullish BOS') || shift15m.includes('Bullish MSS'))) ||
       (indicators15m?.mssDetected && indicators15m?.mssDirection === 'BULLISH') ||
-      (indicators5m?.mssDetected && indicators5m?.mssDirection === 'BULLISH');
-    if (isBullEvent) {
+      (indicators15m?.chochDetected && (indicators15m?.trendStructure === 'LH_LL' || indicators15m?.structure === 'BULLISH'));
+
+    if (hasM15BullEvent) {
       return true;
     }
 
@@ -1306,18 +1308,35 @@ export function hasConfirmedReversalStructure(
       }
     }
 
+    // 4. M5 structural event is valid ONLY IF M15 is NOT in a strong opposing trend
+    const isM15Opposing = indicators15m?.marketRegime === 'STRONG_DOWNTREND' || indicators15m?.structure === 'BEARISH';
+    if (!isM15Opposing) {
+      const ev5m = indicators5m?.structureEvent;
+      const shift5m = indicators5m?.structureShift;
+      const hasM5BullEvent =
+        ev5m === 'BULLISH_MSS_SWEEP' || ev5m === 'BULLISH_CHOCH' || ev5m === 'BULLISH_BOS' ||
+        shift5m === 'CHOCH_BULLISH' || shift5m === 'BULLISH_CHOCH' || shift5m === 'BULLISH_BOS' ||
+        (typeof shift5m === 'string' && (shift5m.includes('Bullish CHOCH') || shift5m.includes('Bullish BOS') || shift5m.includes('Bullish MSS'))) ||
+        (indicators5m?.mssDetected && indicators5m?.mssDirection === 'BULLISH');
+      if (hasM5BullEvent) {
+        return true;
+      }
+    }
+
     return false;
   } else {
     // Bearish reversal confirmation
-    // 1. Confirmed M15 / M5 structural shift / BOS / MSS in bearish direction
+    // 1. Confirmed M15 structural shift / BOS / MSS / CHOCH in bearish direction
     const ev15m = indicators15m?.structureEvent;
-    const ev5m = indicators5m?.structureEvent;
-    const isBearEvent =
+    const shift15m = indicators15m?.structureShift;
+    const hasM15BearEvent =
       ev15m === 'BEARISH_MSS_SWEEP' || ev15m === 'BEARISH_CHOCH' || ev15m === 'BEARISH_BOS' ||
-      ev5m === 'BEARISH_MSS_SWEEP' || ev5m === 'BEARISH_CHOCH' || ev5m === 'BEARISH_BOS' ||
+      shift15m === 'CHOCH_BEARISH' || shift15m === 'BEARISH_CHOCH' || shift15m === 'BEARISH_BOS' ||
+      (typeof shift15m === 'string' && (shift15m.includes('Bearish CHOCH') || shift15m.includes('Bearish BOS') || shift15m.includes('Bearish MSS'))) ||
       (indicators15m?.mssDetected && indicators15m?.mssDirection === 'BEARISH') ||
-      (indicators5m?.mssDetected && indicators5m?.mssDirection === 'BEARISH');
-    if (isBearEvent) {
+      (indicators15m?.chochDetected && (indicators15m?.trendStructure === 'HH_HL' || indicators15m?.structure === 'BEARISH'));
+
+    if (hasM15BearEvent) {
       return true;
     }
 
@@ -1336,6 +1355,21 @@ export function hasConfirmedReversalStructure(
       const prevSwings = closedCandles15m.slice(-6, -1);
       const prevMinLow = Math.min(...prevSwings.map((c) => c.low));
       if (last15.close < prevMinLow - 0.2 * (atr14 || 1.0) && indicators15m?.structure === 'BEARISH') {
+        return true;
+      }
+    }
+
+    // 4. M5 structural event is valid ONLY IF M15 is NOT in a strong opposing trend
+    const isM15Opposing = indicators15m?.marketRegime === 'STRONG_UPTREND' || indicators15m?.structure === 'BULLISH';
+    if (!isM15Opposing) {
+      const ev5m = indicators5m?.structureEvent;
+      const shift5m = indicators5m?.structureShift;
+      const hasM5BearEvent =
+        ev5m === 'BEARISH_MSS_SWEEP' || ev5m === 'BEARISH_CHOCH' || ev5m === 'BEARISH_BOS' ||
+        shift5m === 'CHOCH_BEARISH' || shift5m === 'BEARISH_CHOCH' || shift5m === 'BEARISH_BOS' ||
+        (typeof shift5m === 'string' && (shift5m.includes('Bearish CHOCH') || shift5m.includes('Bearish BOS') || shift5m.includes('Bearish MSS'))) ||
+        (indicators5m?.mssDetected && indicators5m?.mssDirection === 'BEARISH');
+      if (hasM5BearEvent) {
         return true;
       }
     }

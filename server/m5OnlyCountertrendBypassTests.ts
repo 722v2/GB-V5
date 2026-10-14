@@ -302,7 +302,7 @@ console.log('\n[TEST C] M15 Confirmed Reversal (15M CHOCH_BEARISH) counter-trend
     entry: 4330.0,
     stopLoss: 4334.5,
     tp1: 4320.0,
-    setupName: 'Order Block Retest',
+    setupName: 'Countertrend Order Block Retest',
     strategyFamily: 'ORDER_BLOCK' as const,
     poiPrice: 4332.0,
     poiMeta: { top: 4333.0, bottom: 4331.0, poiPrice: 4332.0, type: 'ORDER_BLOCK' as const },

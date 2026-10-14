@@ -113,12 +113,35 @@ export const TradesView: React.FC<TradesViewProps> = ({
     });
   };
 
-  // Confirm close with authoritative P&L
-  const handleConfirmCloseTrade = () => {
+  // Confirm close with authoritative P&L (Integrated with Phase 5B close-user-trade endpoint)
+  const handleConfirmCloseTrade = async () => {
     if (!closingTrade) return;
     const parsed = parseFloat(closingTrade.pnlInput);
     const validAmount = isNaN(parsed) ? (closingTrade.outcome === 'WIN' ? 2.25 : 1.5) : Math.abs(parsed);
     const finalPl = closingTrade.outcome === 'WIN' ? validAmount : -validAmount;
+
+    try {
+      const res = await fetch(`/api/trades/${closingTrade.trade.id}/close-user-trade`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          outcome: closingTrade.outcome,
+          exitPrice: currentPrice,
+          realizedPnl: finalPl,
+          closeReason: 'MANUAL_USER_CLOSE',
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.trade) {
+          onUpdateTrade(data.trade);
+          setClosingTrade(null);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('API close-user-trade failed, falling back to local update:', e);
+    }
 
     const updated: TradeLedgerItem = {
       ...closingTrade.trade,
@@ -132,6 +155,35 @@ export const TradesView: React.FC<TradesViewProps> = ({
     };
     onUpdateTrade(updated);
     setClosingTrade(null);
+  };
+
+  // Phase 5B: Apply trade management recommendation (e.g. SL Trailing or TP Extension)
+  const handleApplyRecommendation = async (trade: TradeLedgerItem) => {
+    try {
+      const res = await fetch(`/api/trades/${trade.id}/apply-recommendation`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actionType: trade.lastManagementAction }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.trade) {
+          onUpdateTrade(data.trade);
+          return;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to apply recommendation via API:', e);
+    }
+
+    // Local fallback update
+    const updated: TradeLedgerItem = {
+      ...trade,
+      sl: trade.suggestedSL !== undefined && trade.suggestedSL > 0 ? trade.suggestedSL : trade.sl,
+      tp2: trade.suggestedTP2 !== undefined && trade.suggestedTP2 > 0 ? trade.suggestedTP2 : trade.tp2,
+      isRecommendationApplied: true,
+    };
+    onUpdateTrade(updated);
   };
 
   // Submit manual trade
@@ -472,6 +524,43 @@ export const TradesView: React.FC<TradesViewProps> = ({
                       </span>
                     </div>
                   </div>
+
+                  {/* Phase 5B Management Recommendation Banner */}
+                  {t.managementState && t.managementState !== 'HOLD' && t.managementState !== 'DATA_INCOMPLETE' && (
+                    <div className={`mt-3 p-3 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs font-mono ${
+                      t.managementState === 'EARLY_EXIT'
+                        ? 'bg-rose-950/60 border-rose-500/50 text-rose-200'
+                        : t.managementState === 'REVERSAL_WATCH'
+                        ? 'bg-amber-950/60 border-amber-500/50 text-amber-200'
+                        : t.managementState === 'TARGET_EXTENSION'
+                        ? 'bg-purple-950/60 border-purple-500/50 text-purple-200'
+                        : 'bg-cyan-950/60 border-cyan-500/50 text-cyan-200'
+                    }`}>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold">
+                          {t.managementState === 'TP1_HIT' && '🎯 هدف TP1 تحقق — حجز أرباح'}
+                          {t.managementState === 'TARGET_EXTENSION' && '🚀 تمديد الهدف (Target Extension)'}
+                          {t.managementState === 'TRAIL_STOP' && '🛡️ تأمين الأرباح (Trailing Stop)'}
+                          {t.managementState === 'REVERSAL_WATCH' && '⚠️ مراقبة انعكاس الهيكل'}
+                          {t.managementState === 'EARLY_EXIT' && '🚨 خروج مبكر موصى به'}
+                          {!['TP1_HIT', 'TARGET_EXTENSION', 'TRAIL_STOP', 'REVERSAL_WATCH', 'EARLY_EXIT'].includes(t.managementState) && `📌 حالة الإدارة: ${t.managementState}`}
+                        </span>
+                        {t.suggestedSL && <span>• SL مقترح: ${t.suggestedSL.toFixed(2)}</span>}
+                        {t.suggestedTP2 && <span>• TP2 مقترح: ${t.suggestedTP2.toFixed(2)}</span>}
+                      </div>
+                      {(t.suggestedSL || t.suggestedTP2) && !t.isRecommendationApplied && (
+                        <button
+                          onClick={() => handleApplyRecommendation(t)}
+                          className="px-2.5 py-1 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-100 font-bold text-[11px] border border-stone-600 transition-colors cursor-pointer"
+                        >
+                          تطبيق التوصية
+                        </button>
+                      )}
+                      {t.isRecommendationApplied && (
+                        <span className="text-[10px] text-emerald-400 font-bold">✅ تم تطبيق التوصية</span>
+                      )}
+                    </div>
+                  )}
 
                   {/* Trade Action Controls */}
                   <div className="mt-3 pt-2.5 border-t border-stone-800/80 flex items-center justify-between">

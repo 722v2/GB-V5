@@ -665,12 +665,12 @@ export async function runTpSelectionRegressionSuite() {
   {
     console.log('\n[SUPPLEMENTARY] Verifying SL quality, anti-chase, and risk sizing safety controls...');
     // 55-point SL within 35-65 boundaries
-    const sl55 = assessStopLossQuality('BUY', 2650.00, 2644.50, buildMockIndicators({ swingLow: 2644.80 }), 35, 65);
+    const sl55 = assessStopLossQuality('BUY', 2650.00, 2644.50, buildMockIndicators({ swingLow: 2644.80 }).atr14, 35, 65);
     assert.strictEqual(sl55.isValid, true);
     assert.strictEqual(sl55.slPoints, 55.0);
 
     // 70-point SL rejected (>65 ceiling)
-    const sl70 = assessStopLossQuality('BUY', 2650.00, 2643.00, buildMockIndicators({ swingLow: 2643.30 }), 35, 65);
+    const sl70 = assessStopLossQuality('BUY', 2650.00, 2643.00, buildMockIndicators({ swingLow: 2643.30 }).atr14, 35, 65);
     assert.strictEqual(sl70.isValid, false);
 
     // Chased entry detected

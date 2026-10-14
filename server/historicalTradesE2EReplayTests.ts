@@ -1,3 +1,6 @@
+process.env.IS_TESTING = 'true';
+process.env.NODE_ENV = 'test';
+
 import { validateTradeSignalCandidate } from './tradeQualityEngine.js';
 import { generateMultiStrategyCandidates } from './strategyEngine.js';
 import { detectDoubleTopBottom, detectHorizontalBreakoutRetest, hasConfirmedReversalStructure } from './indicators.js';
@@ -103,8 +106,19 @@ console.log('[TEST 1] E2E Replay - Trade #10020: Bearish Trend Continuation');
     brokerSpecs: defaultBrokerSpecs,
   });
 
-  console.log(`  [Trace #10020] candidateGenerated = true, qualityValidation = ${validation.isValid ? 'ACCEPTED' : 'REJECTED'}`);
-  assert(validation.isValid, '#10020 PASS: Trend continuation setup with R:R 1.04R aligned with HTF trend is CURRENTLY VALID');
+  console.log(`  [Trace #10020] candidateGenerated = true, qualityValidation = ${validation.isValid ? 'ACCEPTED' : 'REJECTED'}, rejectionReason = ${validation.rejectionReason}`);
+  // In hardened production logic, 1.04R is strictly blocked by the 1.15R trend-continuation gate:
+  assert(!validation.isValid && validation.rejectionReason?.includes('INSUFFICIENT_RR'), '#10020 PASS: 1.04R sub-threshold trend continuation is strictly blocked by 1.15R quality gate');
+
+  // Re-verify that with adequate R:R (>= 1.15R), the trend continuation candidate is valid:
+  const cand10020Valid = { ...cand10020, tp1: 4339.40 }; // 5.28 pts TP1 / 4.51 pts SL = 1.17R
+  const validationValid = validateTradeSignalCandidate(cand10020Valid, {
+    currentPrice: 4344.68,
+    candles5m: c5m, candles15m: c15m, candles1h: c1h,
+    indicators5m: ind5m, indicators15m: ind15m, indicators1h: ind1h,
+    brokerSpecs: defaultBrokerSpecs,
+  });
+  assert(validationValid.isValid, '#10020 PASS: Trend continuation setup with R:R >= 1.15R aligned with HTF trend is VALID');
 }
 
 // ============================================================================
@@ -321,8 +335,8 @@ console.log('\n[TEST 7] M5-Only Counter-Trend Regression (Versions A, B, C)');
     swingHigh: 4345, swingLow: 4310, support: 4310, resistance: 4345,
     structure: 'BULLISH', marketRegime: 'STRONG_UPTREND', trendStructure: 'HH_HL', structureShift: 'None',
   };
-  const ind15mNoReversal = { ...ind1hBullish, atr14: 3.5, structureShift: 'None' as const };
-  const ind5mM5ShiftOnly = { ...ind15mNoReversal, atr14: 2.0, structureShift: 'CHOCH_BEARISH' as const };
+  const ind15mNoReversal = { ...ind1hBullish, atr14: 3.5, structureShift: 'None' as const, structureEvent: 'NONE' as const };
+  const ind5mM5ShiftOnly = { ...ind15mNoReversal, atr14: 2.0, structureShift: 'CHOCH_BEARISH' as const, structureEvent: 'BEARISH_CHOCH' as const };
 
   const c1h = createCandleArray(20, 4330);
   const c15m = createCandleArray(20, 4330);
@@ -337,7 +351,7 @@ console.log('\n[TEST 7] M5-Only Counter-Trend Regression (Versions A, B, C)');
   assert(!hasRevB, 'Version B PASS: M5-only CHOCH_BEARISH against strong HTF returns false');
 
   // Version C: M15 has confirmed CHOCH_BEARISH
-  const ind15mM15Shift = { ...ind15mNoReversal, structureShift: 'CHOCH_BEARISH' as const };
+  const ind15mM15Shift = { ...ind15mNoReversal, structureShift: 'CHOCH_BEARISH' as const, structureEvent: 'BEARISH_CHOCH' as const };
   const hasRevC = hasConfirmedReversalStructure('SELL', ind15mM15Shift, ind5mM5ShiftOnly, c15m, c5m, 3.5);
   assert(hasRevC, 'Version C PASS: Confirmed M15 CHOCH_BEARISH returns true');
 }

@@ -134,8 +134,7 @@ function runTests() {
     'BULLISH',
     2005,
     1995,
-    createdTime,
-    1990
+    createdTime
   );
 
   if (poi.state !== 'FRESH') throw new Error('New POI should be FRESH');

@@ -1,19 +1,5 @@
 [
   {
-    "id": "poi_order_block_15m_bearish_4456.2_4454.4",
-    "type": "ORDER_BLOCK",
-    "timeframe": "15M",
-    "direction": "BEARISH",
-    "top": 4456.2,
-    "bottom": 4454.4,
-    "createdTimestamp": 1790242647842,
-    "createdCandleTime": 1786596900000,
-    "tapCount": 1,
-    "state": "TESTED_ONCE",
-    "invalidationPrice": 4456.75,
-    "lastTestedCandleTime": 1786597200000
-  },
-  {
     "id": "poi_dynamic_ma_5m_bearish_4458.7_4456.5",
     "type": "DYNAMIC_MA",
     "timeframe": "5M",
@@ -2649,5 +2635,17 @@
     "tapCount": 0,
     "state": "FRESH",
     "invalidationPrice": 4112.19
+  },
+  {
+    "id": "poi_test_1791901187021",
+    "timeframe": "15M",
+    "type": "ORDER_BLOCK",
+    "direction": "BULLISH",
+    "top": 2715,
+    "bottom": 2710,
+    "createdTimestamp": 1791901187021,
+    "createdCandleTime": 1791897587021,
+    "state": "TESTED_ONCE",
+    "tapCount": 1
   }
 ]
