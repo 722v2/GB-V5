@@ -450,16 +450,24 @@ export function assessTpPathRunway(
   let entry = 2000;
   let tp1 = 2010;
   let ind15m: any = null;
+  let candles15m: Candle[] = [];
+  let candles1h: Candle[] = [];
+  let candles5m: Candle[] = [];
 
   if (typeof param1 === 'object' && param1 !== null) {
     direction = param1.direction ?? 'BUY';
     entry = Number(param1.entry ?? 2000);
     tp1 = Number(param1.tp1 ?? 2010);
     ind15m = param1.indicators15m;
+    candles15m = Array.isArray(param1.candles15m) ? param1.candles15m : [];
+    candles1h = Array.isArray(param1.candles1h) ? param1.candles1h : [];
+    candles5m = Array.isArray(param1.candles5m) ? param1.candles5m : [];
   } else if (typeof param1 === 'string') {
     direction = param1 as 'BUY' | 'SELL';
     entry = typeof param2 === 'number' ? param2 : 2000;
     tp1 = typeof param3 === 'number' ? param3 : 2010;
+    candles15m = Array.isArray(param5) ? param5 : [];
+    candles1h = Array.isArray(param6) ? param6 : [];
     ind15m = param7 || param8;
   }
 
@@ -481,14 +489,24 @@ export function assessTpPathRunway(
 
     const ob = ind15m.orderBlock;
     if (ob) {
-      if (direction === 'BUY' && ob.type === 'BEARISH' && ob.low <= tp1 && ob.high >= entry) {
-        isBlocked = true;
-        obstacleDesc = `Opposing Bearish Order Block at ${ob.low}-${ob.high}`;
-        obstaclePrice = ob.low;
-      } else if (direction === 'SELL' && ob.type === 'BULLISH' && ob.high >= tp1 && ob.low <= entry) {
-        isBlocked = true;
-        obstacleDesc = `Opposing Bullish Order Block at ${ob.low}-${ob.high}`;
-        obstaclePrice = ob.high;
+      const checkCandles = candles15m.length > 0 ? candles15m : (candles5m.length > 0 ? candles5m : candles1h);
+      const isMitigated =
+        ob.mitigated === true ||
+        (checkCandles.length > 0 &&
+          (ob.type === 'BEARISH'
+            ? checkCandles.some((c: Candle) => (c.isClosed ?? true) && Number(c.close ?? 0) >= ob.high)
+            : checkCandles.some((c: Candle) => (c.isClosed ?? true) && Number(c.close ?? 0) <= ob.low)));
+
+      if (!isMitigated) {
+        if (direction === 'BUY' && ob.type === 'BEARISH' && ob.low <= tp1 && ob.high >= entry) {
+          isBlocked = true;
+          obstacleDesc = `Opposing Bearish Order Block at ${ob.low}-${ob.high}`;
+          obstaclePrice = ob.low;
+        } else if (direction === 'SELL' && ob.type === 'BULLISH' && ob.high >= tp1 && ob.low <= entry) {
+          isBlocked = true;
+          obstacleDesc = `Opposing Bullish Order Block at ${ob.low}-${ob.high}`;
+          obstaclePrice = ob.high;
+        }
       }
     }
   }
@@ -1159,24 +1177,107 @@ export function validateTradeSignalCandidate(
     return { isValid: false, score: 0, rejectionReason: 'INSUFFICIENT_RR (RR_BELOW_MINIMUM)' };
   }
 
-  // 0.3. Opposing OB / TP Runway check
+  // 0.2.1. Trend Continuation Quality Gate (Specialized contextual quality rules)
+  const isTrendContinuation = String(signal.setupName || '').includes('Trend Continuation');
+  if (isTrendContinuation) {
+    const ind1h = context?.indicators1h;
+    const ind15m = context?.indicators15m;
+    const factors = signal.factorSnapshot?.factors || {};
+
+    // Rule 1: Contradiction with 1H Trend
+    if (signalDir === 'SELL' && (ind1h?.marketRegime === 'STRONG_UPTREND' || ind1h?.structure === 'BULLISH')) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
+      };
+    }
+    if (signalDir === 'BUY' && (ind1h?.marketRegime === 'STRONG_DOWNTREND' || ind1h?.structure === 'BEARISH')) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation BUY against 1H Bearish Trend)',
+      };
+    }
+
+    // Rule 2: Contradictory context (all 3 factors opposing)
+    const isDiscount = ind15m?.premiumDiscountZone === 'DISCOUNT' || factors.zone === 'DISCOUNT';
+    const isPremium = ind15m?.premiumDiscountZone === 'PREMIUM' || factors.zone === 'PREMIUM';
+    const hasBullishOb = ind15m?.orderBlock?.type === 'BULLISH' || factors.orderBlock === 'BULLISH_OB';
+    const hasBearishOb = ind15m?.orderBlock?.type === 'BEARISH' || factors.orderBlock === 'BEARISH_OB';
+    const hasBullishFvg = ind15m?.fvg?.type === 'BULLISH' || factors.fvg === 'BULLISH_FVG';
+    const hasBearishFvg = ind15m?.fvg?.type === 'BEARISH' || factors.fvg === 'BEARISH_FVG';
+
+    if (signalDir === 'SELL' && isDiscount && hasBullishOb && hasBullishFvg) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'CONTRADICTORY_BULLISH_CONTEXT_FOR_SELL_CONTINUATION (Zone is DISCOUNT with Bullish OB and Bullish FVG)',
+      };
+    }
+    if (signalDir === 'BUY' && isPremium && hasBearishOb && hasBearishFvg) {
+      return {
+        isValid: false,
+        score: 0,
+        rejectionReason: 'CONTRADICTORY_BEARISH_CONTEXT_FOR_BUY_CONTINUATION (Zone is PREMIUM with Bearish OB and Bearish FVG)',
+      };
+    }
+
+    // Rule 3: H1 Ranging quality checks
+    if (ind1h?.structure === 'RANGING' || ind1h?.marketRegime === 'NORMAL_RANGE') {
+      const calcRr = tp1 > 0 && slDist > 0 ? Math.abs(tp1 - entry) / slDist : 0;
+      const effectiveRr = Number(signal.tp1Rr || signal.rrRatio || calcRr);
+      if (effectiveRr < 1.25) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: `TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires minimum 1.25 R:R, got ${effectiveRr.toFixed(2)})`,
+        };
+      }
+      // Rejection trigger check in H1 Ranging
+      const paTrigger = assessPriceActionTrigger(signalDir, context?.candles5m, context?.candles1m, context?.indicators5m);
+      if (!paTrigger.hasHardPriceActionTrigger) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: 'TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires closed M5 rejection candle)',
+        };
+      }
+    }
+  }
+
+  // 0.3. Opposing OB / TP Runway check (with candle-based mitigation awareness)
   const ob15m = context?.indicators15m?.orderBlock;
   const ob5m = context?.indicators5m?.orderBlock;
   const ob = ob15m || ob5m;
   if (ob) {
-    if (signalDir === 'BUY' && ob.type === 'BEARISH' && ob.low <= (tp1 || 999999) && ob.high >= entry) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bearish Order Block at ${ob.low}-${ob.high})`,
-      };
-    }
-    if (signalDir === 'SELL' && ob.type === 'BULLISH' && ob.high >= (tp1 || 0) && ob.low <= entry) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bullish Order Block at ${ob.low}-${ob.high})`,
-      };
+    const candles = [
+      ...(context?.candles15m || []),
+      ...(context?.candles5m || []),
+      ...(context?.candles1h || []),
+    ];
+    const isMitigated =
+      ob.mitigated === true ||
+      (candles.length > 0 &&
+        (ob.type === 'BEARISH'
+          ? candles.some((c: Candle) => (c.isClosed ?? true) && Number(c.close ?? 0) >= ob.high)
+          : candles.some((c: Candle) => (c.isClosed ?? true) && Number(c.close ?? 0) <= ob.low)));
+
+    if (!isMitigated) {
+      if (signalDir === 'BUY' && ob.type === 'BEARISH' && ob.low <= (tp1 || 999999) && ob.high >= entry) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bearish Order Block at ${ob.low}-${ob.high})`,
+        };
+      }
+      if (signalDir === 'SELL' && ob.type === 'BULLISH' && ob.high >= (tp1 || 0) && ob.low <= entry) {
+        return {
+          isValid: false,
+          score: 0,
+          rejectionReason: `BLOCKED_TP_RUNWAY (Opposing Bullish Order Block at ${ob.low}-${ob.high})`,
+        };
+      }
     }
   }
 
@@ -1245,75 +1346,6 @@ export function validateTradeSignalCandidate(
         score: 0,
         rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
       };
-    }
-  }
-
-  // 1.2.1. Trend Continuation Quality Gate
-  const isTrendContinuation = String(signal.setupName || '').includes('Trend Continuation');
-  if (isTrendContinuation) {
-    const ind1h = context?.indicators1h;
-    const ind15m = context?.indicators15m;
-    const factors = signal.factorSnapshot?.factors || {};
-
-    // Rule 1: Contradiction with 1H Trend
-    if (signalDir === 'SELL' && (ind1h?.marketRegime === 'STRONG_UPTREND' || ind1h?.structure === 'BULLISH')) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation SELL against 1H Bullish Trend)',
-      };
-    }
-    if (signalDir === 'BUY' && (ind1h?.marketRegime === 'STRONG_DOWNTREND' || ind1h?.structure === 'BEARISH')) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: 'HTF_CONTRADICTION (Cannot execute trend continuation BUY against 1H Bearish Trend)',
-      };
-    }
-
-    // Rule 2: Contradictory context (all 3 factors opposing)
-    const isDiscount = ind15m?.premiumDiscountZone === 'DISCOUNT' || factors.zone === 'DISCOUNT';
-    const isPremium = ind15m?.premiumDiscountZone === 'PREMIUM' || factors.zone === 'PREMIUM';
-    const hasBullishOb = ind15m?.orderBlock?.type === 'BULLISH' || factors.orderBlock === 'BULLISH_OB';
-    const hasBearishOb = ind15m?.orderBlock?.type === 'BEARISH' || factors.orderBlock === 'BEARISH_OB';
-    const hasBullishFvg = ind15m?.fvg?.type === 'BULLISH' || factors.fvg === 'BULLISH_FVG';
-    const hasBearishFvg = ind15m?.fvg?.type === 'BEARISH' || factors.fvg === 'BEARISH_FVG';
-
-    if (signalDir === 'SELL' && isDiscount && hasBullishOb && hasBullishFvg) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: 'CONTRADICTORY_BULLISH_CONTEXT_FOR_SELL_CONTINUATION (Zone is DISCOUNT with Bullish OB and Bullish FVG)',
-      };
-    }
-    if (signalDir === 'BUY' && isPremium && hasBearishOb && hasBearishFvg) {
-      return {
-        isValid: false,
-        score: 0,
-        rejectionReason: 'CONTRADICTORY_BEARISH_CONTEXT_FOR_BUY_CONTINUATION (Zone is PREMIUM with Bearish OB and Bearish FVG)',
-      };
-    }
-
-    // Rule 3: H1 Ranging quality checks
-    if (ind1h?.structure === 'RANGING' || ind1h?.marketRegime === 'NORMAL_RANGE') {
-      const calcRr = tp1 > 0 && slDist > 0 ? Math.abs(tp1 - entry) / slDist : 0;
-      const effectiveRr = Number(signal.tp1Rr || signal.rrRatio || calcRr);
-      if (effectiveRr < 1.25) {
-        return {
-          isValid: false,
-          score: 0,
-          rejectionReason: `TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires minimum 1.25 R:R, got ${effectiveRr.toFixed(2)})`,
-        };
-      }
-      // Rejection trigger check in H1 Ranging
-      const paTrigger = assessPriceActionTrigger(signalDir, context?.candles5m, context?.candles1m, context?.indicators5m);
-      if (!paTrigger.hasHardPriceActionTrigger) {
-        return {
-          isValid: false,
-          score: 0,
-          rejectionReason: 'TREND_CONTINUATION_HTF_QUALITY_INSUFFICIENT (H1 Ranging requires closed M5 rejection candle)',
-        };
-      }
     }
   }
 

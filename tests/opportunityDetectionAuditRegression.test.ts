@@ -275,6 +275,7 @@ console.log('--- Test 5: Opposing Candidate Arbitration ---');
 // ============================================================================
 console.log('--- Test 6: TP Runway & Mitigated Obstacles ---');
 {
+  // 6A. BUY with mitigated opposing Bearish OB (pierced and closed above by 15M candle)
   const candles15m = [
     createMockCandle(1000, 2010, 2018, 2009, 2017), // Closed at 2017, breaking through 2015!
     createMockCandle(2000, 2017, 2019, 2014, 2016),
@@ -304,7 +305,72 @@ console.log('--- Test 6: TP Runway & Mitigated Obstacles ---');
 
   assert.notStrictEqual(runway.runway, 'BLOCKED', 'Mitigated / broken zones must not block the trade');
   assert.ok(runway.runway !== 'BLOCKED', `Runway must not be BLOCKED, got: ${runway.runway}`);
-  console.log('✅ Test 6 Passed: Mitigated obstacles properly classified without blocking valid TP runway.');
+
+  // 6B. Mirrored SELL with mitigated opposing Bullish OB (pierced and closed below by 15M candle)
+  const candles15mSell = [
+    createMockCandle(1000, 2020, 2022, 2012, 2013), // Closed at 2013, breaking below 2015!
+    createMockCandle(2000, 2013, 2015, 2011, 2014),
+  ];
+  const indicators15mSell = createBaseIndicators(2020);
+  indicators15mSell.orderBlock = {
+    type: 'BULLISH',
+    high: 2017.0,
+    low: 2015.0,
+  };
+  const indicators1hSell = createBaseIndicators(2020);
+  const candles1hSell = createCandleSequence(10, 2020);
+
+  const runwaySell = (assessTpPathRunway as any)(
+    'SELL',
+    2020.0,
+    2010.0,
+    2004.0,
+    candles15mSell,
+    candles1hSell,
+    indicators15mSell,
+    indicators1hSell,
+    2024.0
+  );
+
+  assert.notStrictEqual(runwaySell.runway, 'BLOCKED', 'Mirrored SELL: Mitigated / broken zones must not block the trade');
+  assert.ok(runwaySell.runway !== 'BLOCKED', `Mirrored SELL: Runway must not be BLOCKED, got: ${runwaySell.runway}`);
+
+  // 6C. Mirrored BUY/SELL unmitigated opposing zones MUST remain strictly BLOCKED
+  const candles15mUnmitigatedBuy = [
+    createMockCandle(1000, 2010, 2012, 2009, 2011), // Did not breach 2013/2015 OB
+    createMockCandle(2000, 2011, 2012, 2010, 2011),
+  ];
+  const runwayUnmitigatedBuy = (assessTpPathRunway as any)(
+    'BUY',
+    2010.0,
+    2020.0,
+    2026.0,
+    candles15mUnmitigatedBuy,
+    candles1h,
+    indicators15m,
+    indicators1h,
+    2006.0
+  );
+  assert.strictEqual(runwayUnmitigatedBuy.runway, 'BLOCKED', 'Unmitigated opposing Bearish OB must block BUY runway');
+
+  const candles15mUnmitigatedSell = [
+    createMockCandle(1000, 2020, 2021, 2018, 2019), // Did not breach 2015/2017 OB
+    createMockCandle(2000, 2019, 2020, 2018, 2019),
+  ];
+  const runwayUnmitigatedSell = (assessTpPathRunway as any)(
+    'SELL',
+    2020.0,
+    2010.0,
+    2004.0,
+    candles15mUnmitigatedSell,
+    candles1hSell,
+    indicators15mSell,
+    indicators1hSell,
+    2024.0
+  );
+  assert.strictEqual(runwayUnmitigatedSell.runway, 'BLOCKED', 'Unmitigated opposing Bullish OB must block SELL runway');
+
+  console.log('✅ Test 6 Passed: Mitigated obstacles properly classified without blocking valid TP runway (mirrored BUY/SELL verified).');
 }
 
 // ============================================================================

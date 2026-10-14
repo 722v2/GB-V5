@@ -156,10 +156,10 @@ async function runAllTests() {
       direction: 'SELL' as const,
       entry: 4345.0,
       stopLoss: 4350.0, // 5.0 SL
-      tp1: 4339.5,     // 5.5 TP1 -> 1.10R
+      tp1: 4339.0,     // 6.0 TP1 -> 1.20R (satisfies universal 1.15R, fails H1 ranging 1.25R)
       slPoints: 50,
-      tp1Points: 55,
-      tp1Rr: 1.10,
+      tp1Points: 60,
+      tp1Rr: 1.20,
       confidence: 75,
     };
 
